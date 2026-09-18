@@ -1,0 +1,42 @@
+### Maven / Build ###
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+build/
+*.jar
+*.war
+*.class
+
+### IDE - IntelliJ ###
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### IDE - Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IDE - VS Code ###
+.vscode/
+
+### Secretos / Configuracion local ###
+.env
+.env.local
+*.local.properties
+application-local.properties
+application-prod.properties
+
+### Sistema operativo ###
+.DS_Store
+Thumbs.db
+
+### Logs ###
+*.log
+logs/

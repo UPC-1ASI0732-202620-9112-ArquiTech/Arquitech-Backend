@@ -1,22 +1,11 @@
 package com.acme.arquitech.platform.incidents.rest.resources;
-
-import com.acme.arquitech.platform.incidents.domain.model.valueobjects.IncidentSeverity;
-import com.acme.arquitech.platform.incidents.domain.model.valueobjects.IncidentStatus;
-import com.fasterxml.jackson.annotation.JsonProperty;
-
-import java.time.LocalDate;
-import java.util.Date;
-
-public record IncidentResource(
-        @JsonProperty("id") Long id,
-        @JsonProperty("date") LocalDate date,
-        @JsonProperty("incident_type") String incidentType,
-        @JsonProperty("severity") IncidentSeverity severity,
-        @JsonProperty("status") IncidentStatus status,
-        @JsonProperty("description") String description,
-        @JsonProperty("measures_taken") String measuresTaken,
-        @JsonProperty("project_id") Long projectId,
-        @JsonProperty("created_at") Date createdAt,
-        @JsonProperty("updated_at") Date updatedAt
-) {
+import com.acme.arquitech.platform.incidents.domain.model.aggregates.Incident;
+import com.acme.arquitech.platform.incidents.domain.model.valueobjects.*;
+import java.time.OffsetDateTime;
+public record IncidentResource(Long id, Long projectId, Long reportedByUserId, String type, String description,
+        IncidentSeverity severity, IncidentStatus status, OffsetDateTime reportedAt, OffsetDateTime resolvedAt) {
+    public static IncidentResource from(Incident i) {
+        return new IncidentResource(i.getId(), i.getProjectId(), i.getReportedByUserId(), i.getType(),
+                i.getDescription(), i.getSeverity(), i.getStatus().canonical(), i.getReportedAt(), i.getResolvedAt());
+    }
 }

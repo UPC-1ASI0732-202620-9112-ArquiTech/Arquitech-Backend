@@ -1,49 +1,12 @@
 package com.acme.arquitech.platform.materials.interfaces.rest.resources;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
-
+import com.acme.arquitech.platform.materials.domain.model.aggregates.Material;
 import java.math.BigDecimal;
-
-public record MaterialResource(
-
-        Long id,
-        @JsonProperty("project_id")
-        Long projectId,
-        @JsonProperty("name")
-        String name,
-
-        @JsonProperty("quantity")
-        Integer quantity,
-
-        @JsonProperty("unit_price")
-        BigDecimal unitPrice,
-
-        @JsonProperty("unit")
-        String unit,
-
-        @JsonProperty("provider")
-        String provider,
-
-        @JsonProperty("provider_ruc")
-        String providerRuc,
-
-        @JsonProperty("date")
-        String date,
-
-        @JsonProperty("receipt_number")
-        String receiptNumber,
-
-        @JsonProperty("payment_method")
-        String paymentMethod,
-
-        String status,
-        @JsonProperty("quantity_exit")
-        Integer quantityExit,
-        @JsonProperty("entry_type")
-        String entryType,
-        @JsonProperty("exit_type")
-        String exitType,
-        @JsonProperty("entry_date")
-        String exitDate
-) {
+import java.time.LocalDate;
+public record MaterialResource(Long id, Long projectId, String name, String unit, Integer quantity,
+        Integer stock, Integer minimumStock, BigDecimal unitPrice, String provider, String providerRuc, LocalDate date) {
+    public static MaterialResource from(Material m) {
+        return new MaterialResource(m.getId(), m.getProjectId(), m.getName(), m.getUnit(), m.getQuantity(),
+                m.getStock(), m.getMinimumStock(), m.getUnitPrice(), m.getProvider(), m.getProviderRuc(),
+                m.getDate() == null ? null : LocalDate.parse(m.getDate()));
+    }
 }

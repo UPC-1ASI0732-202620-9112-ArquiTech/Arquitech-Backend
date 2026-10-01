@@ -1,107 +1,87 @@
 package com.acme.arquitech.platform.materials.domain.model.aggregates;
-
-import com.acme.arquitech.platform.materials.domain.model.events.MaterialUsedEvent;
+import com.acme.arquitech.platform.materials.domain.exception.*;
 import com.acme.arquitech.platform.materials.domain.model.valueobjects.MaterialStatus;
 import com.acme.arquitech.platform.shared.domain.model.aggregates.AuditableAbstractAggregateRoot;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.*;
 import lombok.Getter;
-import lombok.Setter;
-import org.springframework.data.domain.DomainEvents;
-
+import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
-import java.util.Collection;
+import java.time.LocalDate;
 
 @Getter
-@Setter
+@NoArgsConstructor
 @Entity
 @Table(name = "materials")
 public class Material extends AuditableAbstractAggregateRoot<Material> {
-
-    @NotNull(message = "Project ID is required")
     private Long projectId;
-
-    @NotBlank(message = "Material name is required")
     private String name;
-
-    @NotNull(message = "Quantity is required")
-    @Min(value = 0, message = "Quantity must be non-negative")
     private Integer quantity;
-
-    @NotNull(message = "Unit price is required")
-    @DecimalMin(value = "0.0", message = "Unit price must be non-negative")
+    private Integer stock;
+    private Integer minimumStock;
     private BigDecimal unitPrice;
-
-    @NotBlank(message = "Unit is required")
     private String unit;
-
-    @NotBlank(message = "Provider is required")
     private String provider;
-
-    @NotBlank(message = "Provider RUC is required")
     private String providerRuc;
+    // Keep the legacy VARCHAR column; expose LocalDate in REST.
+    private String date;
+    // Preserved for deployed schemas. New inventory operations do not use these fields.
+    @Deprecated private String receiptNumber = "N/A";
+    @Deprecated private String paymentMethod = "N/A";
+    @Deprecated @Enumerated(EnumType.STRING) private MaterialStatus status = MaterialStatus.RECEIVED;
+    @Deprecated private Integer quantityExit = 0;
+    @Deprecated private String entryType = "ENTRY";
+    @Deprecated private String exitType;
+    @Deprecated private String exitDate;
 
-    @NotBlank(message = "Date is required")
-    private String date; // Consider LocalDate for better date handling
-
-    @NotBlank(message = "Receipt number is required")
-    private String receiptNumber;
-
-    @NotBlank(message = "Payment method is required")
-    private String paymentMethod;
-
-    @NotNull(message = "Status is required")
-    @Enumerated(EnumType.STRING)
-    private MaterialStatus status;
-
-    @NotNull(message = "Quantity exit is required")
-    @Min(value = 0, message = "Quantity exit must be non-negative")
-    private Integer quantityExit;
-
-    @NotBlank(message = "Entry type is required")
-    private String entryType;
-
-    private String exitType;
-
-    private String exitDate;
-
-    public Material() {
+    public Material(Long projectId, String name, String unit, Integer quantity, Integer minimumStock,
+                    BigDecimal unitPrice, String provider, String providerRuc, LocalDate date) {
+        if (quantity < 0) throw new InvalidMaterialDataException("Quantity must be non-negative");
+        this.projectId = projectId;
+        this.quantity = quantity;
+        this.stock = quantity;
+        this.date = date.toString();
+        updateDetails(name, unit, minimumStock, unitPrice, provider, providerRuc);
     }
 
-    public Material(Long projectId, String name, Integer quantity, BigDecimal unitPrice, String unit,
-                    String provider, String providerRuc, String date, String receiptNumber,
-                    String paymentMethod, MaterialStatus status, Integer quantityExit,
-                    String entryType, String exitType, String exitDate) {
-        this.projectId = projectId;
+    public void updateDetails(String name, String unit, Integer minimumStock, BigDecimal unitPrice,
+                              String provider, String providerRuc) {
+        if (minimumStock < 0 || unitPrice.signum() < 0) throw new InvalidMaterialDataException("Negative price or minimum stock");
         this.name = name;
-        this.quantity = quantity;
-        this.unitPrice = unitPrice;
         this.unit = unit;
+        this.minimumStock = minimumStock;
+        this.unitPrice = unitPrice;
         this.provider = provider;
         this.providerRuc = providerRuc;
-        this.date = date;
-        this.receiptNumber = receiptNumber;
-        this.paymentMethod = paymentMethod;
-        this.status = status;
-        this.quantityExit = quantityExit;
-        this.entryType = entryType;
-        this.exitType = exitType;
-        this.exitDate = exitDate;
     }
 
-    public void useMaterial(Integer usedQuantity, String exitDate) {
-        if (usedQuantity > this.quantity - this.quantityExit) {
-            throw new IllegalArgumentException("Insufficient stock available");
+    // Read compatibility for rows created before stock existed; the first write persists the baseline.
+    public Integer getStock() {
+        return stock != null ? stock : Math.max(0, quantity - (quantityExit == null ? 0 : quantityExit));
+    }
+    public Integer getMinimumStock() { return minimumStock == null ? 0 : minimumStock; }
+
+    public void enter(int amount, LocalDate occurredOn) {
+        if (amount <= 0) throw new InvalidMaterialDataException("Quantity must be positive");
+        try {
+            int nextQuantity = Math.addExact(quantity, amount);
+            int nextStock = Math.addExact(getStock(), amount);
+            quantity = nextQuantity;
+            stock = nextStock;
+        } catch (ArithmeticException ex) {
+            throw new InvalidMaterialDataException("Quantity exceeds supported range");
         }
-        this.quantityExit += usedQuantity;
-        this.exitType = "Exit";
-        this.exitDate = exitDate;
-        this.registerEvent(new MaterialUsedEvent(this.id, usedQuantity, exitDate));
+        updateStockDate(occurredOn);
     }
 
+    public void use(int amount, LocalDate occurredOn) {
+        if (amount <= 0) throw new InvalidMaterialDataException("Quantity must be positive");
+        if (amount > getStock()) throw new InsufficientStockException(id);
+        stock = getStock() - amount;
+        updateStockDate(occurredOn);
+    }
 
-    @DomainEvents
-    public Collection<Object> domainEvents() {
-        return super.domainEvents();
+    private void updateStockDate(LocalDate occurredOn) {
+        LocalDate previous = date == null ? null : LocalDate.parse(date);
+        if (previous == null || occurredOn.isAfter(previous)) date = occurredOn.toString();
     }
 }

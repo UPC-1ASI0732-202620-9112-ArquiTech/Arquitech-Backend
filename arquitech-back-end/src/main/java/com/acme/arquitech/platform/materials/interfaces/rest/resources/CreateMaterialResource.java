@@ -1,40 +1,20 @@
 package com.acme.arquitech.platform.materials.interfaces.rest.resources;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
-
+import com.fasterxml.jackson.annotation.JsonAlias;
+import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 public record CreateMaterialResource(
-        @JsonProperty("project_id")
-        Long projectId,
-        @JsonProperty("name")
-        String name,
-
-        @JsonProperty("quantity")
-        Integer quantity,
-
-        @JsonProperty("unit_price")
-        BigDecimal unitPrice,
-
-        @JsonProperty("unit")
-        String unit,
-
-        @JsonProperty("provider")
-        String provider,
-
-        @JsonProperty("provider_ruc")
-        String providerRuc,
-
-        @JsonProperty("date")
-        String date,
-
-        @JsonProperty("receipt_number")
-        String receiptNumber,
-
-        @JsonProperty("payment_method")
-        String paymentMethod,
-
-        @JsonProperty("entry_type")
-        String entryType
-) {
+        @JsonAlias("project_id") @NotNull @Positive Long projectId,
+        @NotBlank @Size(max = 255) String name,
+        @NotBlank @Size(max = 255) String unit,
+        @NotNull @PositiveOrZero Integer quantity,
+        @JsonAlias("minimum_stock") @NotNull @PositiveOrZero Integer minimumStock,
+        @JsonAlias("unit_price") @NotNull @DecimalMin("0") @Digits(integer = 17, fraction = 2) BigDecimal unitPrice,
+        @NotBlank @Size(max = 255) String provider,
+        @JsonAlias("provider_ruc") @NotBlank @Pattern(regexp = "^(10|15|17|20)[0-9]{9}$") String providerRuc,
+        @NotNull LocalDate date) {
+    public com.acme.arquitech.platform.materials.domain.model.commands.CreateMaterialCommand toCommand() {
+        return new com.acme.arquitech.platform.materials.domain.model.commands.CreateMaterialCommand(projectId, name, unit, quantity, minimumStock, unitPrice, provider, providerRuc, date);
+    }
 }

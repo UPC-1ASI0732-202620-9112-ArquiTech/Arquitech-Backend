@@ -1,14 +1,8 @@
 package com.acme.arquitech.platform.workers.domain.services;
-
 import com.acme.arquitech.platform.workers.domain.model.aggregates.Worker;
-
-import java.util.List;
-import java.util.Optional;
-
+import com.acme.arquitech.platform.workers.domain.model.commands.*;
 public interface WorkerService {
-    Worker create(Worker worker);
-    Worker update(Worker worker);
+    Worker create(CreateWorkerCommand resource);
+    Worker update(Long id, UpdateWorkerCommand resource);
     void delete(Long id);
-    List<Worker> findByProjectId(Long projectId);
-    Optional<Worker> findById(Long id);
 }

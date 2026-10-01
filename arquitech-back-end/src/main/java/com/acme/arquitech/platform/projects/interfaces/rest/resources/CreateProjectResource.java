@@ -1,23 +1,22 @@
 package com.acme.arquitech.platform.projects.interfaces.rest.resources;
 import com.acme.arquitech.platform.projects.domain.model.valueobjects.ProjectStatus;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+
 public record CreateProjectResource(
-        @NotBlank String name,
-        @JsonProperty("start_date")
-        @NotNull @FutureOrPresent LocalDate startDate,
-        @JsonProperty("end_date")
-        @NotNull @Future LocalDate endDate,
-        @JsonProperty("budget")
-        @NotNull @DecimalMin("0.00") BigDecimal budget,
-        @JsonProperty("status")
+        @NotBlank @Size(max = 255) String name,
+        @NotBlank @Size(max = 255) String location,
+        @JsonAlias("start_date") @NotNull LocalDate startDate,
+        @JsonAlias("end_date") @NotNull LocalDate endDate,
+        @NotNull @DecimalMin("0") @Digits(integer = 8, fraction = 2) BigDecimal budget,
         @NotNull ProjectStatus status,
-        @JsonProperty("user_id")
-        @NotNull @Positive Long userId,
-        @JsonProperty("contractor_id")
-        @NotNull @Positive Long contractorId,
-        @JsonProperty("image_url")
-        String imageUrl) {
+        @NotNull @Min(0) @Max(100) Integer progress,
+        @JsonAlias({"userId", "user_id", "supervisor_id"}) @NotNull @Positive Long supervisorId,
+        @JsonAlias("contractor_id") @NotNull @Positive Long contractorId,
+        @JsonAlias("image_url") @Size(max = 255) String imageUrl) {
+    public com.acme.arquitech.platform.projects.domain.model.commands.CreateProjectCommand toCommand() {
+        return new com.acme.arquitech.platform.projects.domain.model.commands.CreateProjectCommand(name, location, startDate, endDate, budget, status, progress, supervisorId, contractorId, imageUrl);
+    }
 }

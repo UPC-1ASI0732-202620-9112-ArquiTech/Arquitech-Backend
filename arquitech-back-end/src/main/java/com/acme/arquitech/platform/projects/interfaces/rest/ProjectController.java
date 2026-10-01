@@ -1,100 +1,42 @@
 package com.acme.arquitech.platform.projects.interfaces.rest;
-
 import com.acme.arquitech.platform.iam.domain.model.valueobjects.Role;
-import com.acme.arquitech.platform.projects.internal.commandservices.ProjectCommandServiceImpl;
-import com.acme.arquitech.platform.projects.internal.queryservices.ProjectQueryServiceImpl;
-import com.acme.arquitech.platform.projects.domain.model.aggregates.Project;
-import com.acme.arquitech.platform.projects.interfaces.rest.resources.CreateProjectResource;
-import com.acme.arquitech.platform.projects.interfaces.rest.resources.ProjectResource;
-import com.acme.arquitech.platform.shared.interfaces.rest.resources.MessageResource;
+import com.acme.arquitech.platform.projects.domain.services.*;
+import com.acme.arquitech.platform.projects.interfaces.rest.resources.*;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.http.MediaType;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping(value="/api/v1/projects", produces = MediaType.APPLICATION_JSON_VALUE)
-@Tag(name = "Projects", description = "Project Management Endpoints")
+@RequestMapping(value = "/api/v1/projects", produces = "application/json")
+@Tag(name = "Projects")
+@RequiredArgsConstructor
 public class ProjectController {
-    private final ProjectQueryServiceImpl projectQueryService;
-    private final ProjectCommandServiceImpl projectCommandService;
-
-    public ProjectController(ProjectQueryServiceImpl projectQueryService, ProjectCommandServiceImpl projectCommandService) {
-        this.projectQueryService = projectQueryService;
-        this.projectCommandService = projectCommandService;
-    }
-
-
-        @GetMapping
-        public ResponseEntity<List<ProjectResource>> getAllProjects() {
-            List<Project> projects = projectQueryService.findAll();
-            if (projects.isEmpty()) {
-                return ResponseEntity.ok(List.of());
-            }
-            List<ProjectResource> resources = projects.stream()
-                    .map(project -> new ProjectResource(
-                            project.getId(),
-                            project.getName(),
-                            project.getStartDate(),
-                            project.getEndDate(),
-                            project.getBudget(),
-                            project.getStatus(),
-                            project.getUser().getId(),
-                            project.getContractor().getId(),
-                            project.getImageUrl()))
-                    .collect(Collectors.toList());
-            return ResponseEntity.ok(resources);
-        }
-
-
+    private final ProjectQueryService queryService;
+    private final ProjectCommandService commandService;
+    @GetMapping
+    @Operation(summary = "List your accessible projects")
+    public List<ProjectResource> getAll() { return queryService.findAll().stream().map(ProjectResource::from).toList(); }
+    @GetMapping("/{id}")
+    @Operation(summary = "Read an accessible project")
+    public ProjectResource get(@PathVariable Long id) { return ProjectResource.from(queryService.findById(id)); }
     @GetMapping("/supervisor/{userId}")
-    public ResponseEntity<?> getProjectsBySupervisor(@PathVariable Long userId) {
-        List<Project> projects = projectQueryService.findByUserIdAndRole(userId, Role.SUPERVISOR);
-        if (projects.isEmpty()) {
-            return ResponseEntity.ok(new MessageResource("No projects registered for this supervisor"));
-        }
-        List<ProjectResource> resources = projects.stream()
-                .map(project -> new ProjectResource(
-                        project.getId(),
-                        project.getName(),
-                        project.getStartDate(),
-                        project.getEndDate(),
-                        project.getBudget(),
-                        project.getStatus(),
-                        project.getUser().getId(),
-                        project.getContractor().getId(),
-                        project.getImageUrl()))
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(resources);
+    @Operation(summary = "List your supervised projects")
+    public List<ProjectResource> supervisor(@PathVariable Long userId) {
+        return queryService.findByUserIdAndRole(userId, Role.SUPERVISOR).stream().map(ProjectResource::from).toList();
     }
-
+    @GetMapping("/contractor/{userId}")
+    @Operation(summary = "List your contracted projects")
+    public List<ProjectResource> contractor(@PathVariable Long userId) {
+        return queryService.findByUserIdAndRole(userId, Role.CONTRACTOR).stream().map(ProjectResource::from).toList();
+    }
     @PostMapping
-    public ResponseEntity<ProjectResource> createProject(@Valid @RequestBody CreateProjectResource createProjectResource) {
-        Project savedProject = projectCommandService.create(
-                createProjectResource.name(),
-                createProjectResource.startDate(),
-                createProjectResource.endDate(),
-                createProjectResource.budget(),
-                createProjectResource.status(),
-                createProjectResource.userId(),
-                createProjectResource.contractorId(),
-                createProjectResource.imageUrl()
-        );
-        ProjectResource resource = new ProjectResource(
-                savedProject.getId(),
-                savedProject.getName(),
-                savedProject.getStartDate(),
-                savedProject.getEndDate(),
-                savedProject.getBudget(),
-                savedProject.getStatus(),
-                savedProject.getUser().getId(),
-                savedProject.getContractor().getId(),
-                savedProject.getImageUrl()
-        );
-        return ResponseEntity.status(201).body(resource);
+    @Operation(summary = "Create a project as its supervisor")
+    public ResponseEntity<ProjectResource> create(@Valid @RequestBody CreateProjectResource resource) {
+        var result = ProjectResource.from(commandService.create(resource.toCommand()));
+        return ResponseEntity.created(java.net.URI.create("/api/v1/projects/" + result.id())).body(result);
     }
 }

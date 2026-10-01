@@ -1,7 +1,8 @@
 package com.acme.arquitech.platform.workers.domain.exceptions;
-
-public class WorkerNotFoundException extends RuntimeException {
+import com.acme.arquitech.platform.shared.domain.exceptions.ApiException;
+import org.springframework.http.HttpStatus;
+public class WorkerNotFoundException extends ApiException {
     public WorkerNotFoundException(Long id) {
-        super("Worker with ID " + id + " not found");
+        super(HttpStatus.NOT_FOUND, "WORKER_NOT_FOUND", "Worker with id " + id + " was not found");
     }
 }

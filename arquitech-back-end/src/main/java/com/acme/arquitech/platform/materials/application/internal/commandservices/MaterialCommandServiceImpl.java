@@ -1,108 +1,68 @@
 package com.acme.arquitech.platform.materials.application.internal.commandservices;
-
-import com.acme.arquitech.platform.materials.domain.exception.InsufficientStockException;
-import com.acme.arquitech.platform.materials.domain.exception.InvalidMaterialDataException;
+import com.acme.arquitech.platform.iam.application.internal.authorization.CurrentUserService;
+import com.acme.arquitech.platform.projects.application.authorization.ProjectAccessService;
 import com.acme.arquitech.platform.materials.domain.exception.MaterialNotFoundException;
-import com.acme.arquitech.platform.materials.domain.model.aggregates.Material;
-import com.acme.arquitech.platform.materials.domain.model.valueobjects.MaterialStatus;
+import com.acme.arquitech.platform.materials.domain.model.aggregates.*;
+import com.acme.arquitech.platform.materials.domain.model.valueobjects.MovementType;
 import com.acme.arquitech.platform.materials.domain.service.MaterialService;
-import com.acme.arquitech.platform.materials.infrastructure.persistence.jpa.repositories.MaterialRepository;
+import com.acme.arquitech.platform.materials.infrastructure.persistence.jpa.repositories.*;
+import com.acme.arquitech.platform.materials.domain.model.commands.*;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import org.springframework.transaction.annotation.Transactional;
+import java.time.ZoneOffset;
 
 @Service
+@RequiredArgsConstructor
+@Transactional
+@PreAuthorize("hasAuthority('SUPERVISOR')")
 public class MaterialCommandServiceImpl implements MaterialService {
-
     private final MaterialRepository materialRepository;
+    private final MaterialMovementRepository movements;
+    private final ProjectAccessService access;
+    private final CurrentUserService currentUser;
 
-    public MaterialCommandServiceImpl(MaterialRepository materialRepository) {
-        this.materialRepository = materialRepository;
+    public Material createMaterial(CreateMaterialCommand r) {
+        access.requireWrite(r.projectId());
+        var material = materialRepository.save(new Material(r.projectId(), r.name(), r.unit(), r.quantity(),
+                r.minimumStock(), r.unitPrice(), r.provider(), r.providerRuc(), r.date()));
+        movements.save(new MaterialMovement(material, MovementType.ENTRY, r.quantity(), r.provider(),
+                currentUser.get(), r.date().atStartOfDay().atOffset(ZoneOffset.UTC), "Initial inventory"));
+        return material;
     }
 
-    @Override
-    public Material createMaterial(Material material) {
-        validateMaterial(material);
-        material.setStatus(MaterialStatus.RECEIVED);
-        return materialRepository.save(material);
+    public Material updateMaterial(Long id, UpdateMaterialCommand r) {
+        var material = writable(id);
+        material.updateDetails(r.name(), r.unit(), r.minimumStock(), r.unitPrice(), r.provider(), r.providerRuc());
+        return material;
     }
 
-    @Override
-    public Optional<Material> findById(Long id) {
-        return materialRepository.findById(id);
+    public MaterialMovement enter(Long id, MaterialEntryCommand r) {
+        var material = writable(id);
+        material.enter(r.quantity(), r.occurredAt().withOffsetSameInstant(ZoneOffset.UTC).toLocalDate());
+        return movements.save(new MaterialMovement(material, MovementType.ENTRY, r.quantity(), r.supplier(),
+                currentUser.get(), r.occurredAt(), r.note()));
     }
 
-    @Override
-    public List<Material> findAllByProjectId(Long projectId) {
-        return materialRepository.findAllByProjectId(projectId);
+    public MaterialMovement use(Long id, MaterialUsageCommand r) {
+        var material = writable(id);
+        material.use(r.quantity(), r.occurredAt().withOffsetSameInstant(ZoneOffset.UTC).toLocalDate());
+        return movements.save(new MaterialMovement(material, MovementType.USAGE, r.quantity(), null,
+                currentUser.get(), r.occurredAt(), r.note()));
     }
 
-    @Override
-    public Material useMaterial(Long materialId, Integer quantity, String exitDate) {
-        Material material = materialRepository.findById(materialId)
-                .orElseThrow(() -> new MaterialNotFoundException(materialId));
-        material.useMaterial(quantity, exitDate);
-        return materialRepository.save(material);
+    public void delete(Long id) {
+        var material = writable(id);
+        // Explicit cascade within the same transaction: history is removed before its parent.
+        movements.deleteByMaterialId(id);
+        movements.flush();
+        materialRepository.delete(material);
     }
 
-    @Override
-    public List<Material> getTransactionHistory(Long projectId, String materialName) {
-        return materialRepository.findAllByProjectIdAndName(projectId, materialName);
+    private Material writable(Long id) {
+        var material = materialRepository.findForUpdate(id).orElseThrow(() -> new MaterialNotFoundException(id));
+        access.requireWrite(material.getProjectId());
+        return material;
     }
-
-    @Override
-    public boolean isLowInventory(Long materialId, Integer minimumLevel) {
-        Material material = materialRepository.findById(materialId)
-                .orElseThrow(() -> new MaterialNotFoundException(materialId));
-        return (material.getQuantity() - material.getQuantityExit()) < minimumLevel;
-    }
-
-    private void validateMaterial(Material material) {
-        if (Objects.isNull(material.getQuantity()) || material.getQuantity() < 0) {
-            throw new InvalidMaterialDataException("Quantity is required and must be non-negative");
-        }
-        if (Objects.isNull(material.getUnitPrice()) || material.getUnitPrice().compareTo(BigDecimal.ZERO) < 0) {
-            throw new InvalidMaterialDataException("Unit price is required and must be non-negative");
-        }
-        if (material.getName() == null || material.getName().isBlank()) {
-            throw new InvalidMaterialDataException("Material name is required");
-        }
-    }
-    public Material updateMaterial(
-            Long id,
-            String name,
-            Integer quantity,
-            BigDecimal unitPrice,
-            String unit,
-            String provider,
-            String providerRuc,
-            String date,
-            String receiptNumber,
-            String paymentMethod,
-            String entryType,
-            String exitType,
-            String exitDate
-    ) {
-        Material material = materialRepository.findById(id)
-                .orElseThrow(() -> new MaterialNotFoundException(id));
-        material.setName(name);
-        material.setQuantity(quantity);
-        material.setUnitPrice(unitPrice);
-        material.setUnit(unit);
-        material.setProvider(provider);
-        material.setProviderRuc(providerRuc);
-        material.setDate(date);
-        material.setReceiptNumber(receiptNumber);
-        material.setPaymentMethod(paymentMethod);
-        material.setEntryType(entryType);
-        material.setExitType(exitType);
-        material.setExitDate(exitDate);
-
-        return materialRepository.save(material);
-    }
-
 }

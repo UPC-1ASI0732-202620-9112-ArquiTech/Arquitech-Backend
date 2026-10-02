@@ -1,29 +1,16 @@
 package com.acme.arquitech.platform.materials.interfaces.rest.resources;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
-
+import com.fasterxml.jackson.annotation.JsonAlias;
+import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
-import java.time.LocalDate;
 
 public record UpdateMaterialResource(
-        String name,
-        Integer quantity,
-        @JsonProperty("unit_price")
-        BigDecimal unitPrice,
-        String unit,
-        String provider,
-        @JsonProperty("provider_ruc")
-        String providerRuc,
-        String date,
-        @JsonProperty("receipt_number")
-        String receiptNumber,
-        @JsonProperty("payment_method")
-        String paymentMethod,
-        @JsonProperty("entry_type")
-        String entryType,
-        @JsonProperty("entry_date")
-        String exitType,
-        @JsonProperty("exit_date")
-        String exitDate
-) {
+        @NotBlank @Size(max = 255) String name,
+        @NotBlank @Size(max = 255) String unit,
+        @JsonAlias("minimum_stock") @NotNull @PositiveOrZero Integer minimumStock,
+        @JsonAlias("unit_price") @NotNull @DecimalMin("0") @Digits(integer = 17, fraction = 2) BigDecimal unitPrice,
+        @NotBlank @Size(max = 255) String provider,
+        @JsonAlias("provider_ruc") @NotBlank @Pattern(regexp = "^(10|15|17|20)[0-9]{9}$") String providerRuc) {
+    public com.acme.arquitech.platform.materials.domain.model.commands.UpdateMaterialCommand toCommand() {
+        return new com.acme.arquitech.platform.materials.domain.model.commands.UpdateMaterialCommand(name, unit, minimumStock, unitPrice, provider, providerRuc);
+    }
 }

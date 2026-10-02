@@ -1,7 +1,8 @@
 package com.acme.arquitech.platform.incidents.domain.exceptions;
-
-public class IncidentNotFoundException extends RuntimeException {
+import com.acme.arquitech.platform.shared.domain.exceptions.ApiException;
+import org.springframework.http.HttpStatus;
+public class IncidentNotFoundException extends ApiException {
     public IncidentNotFoundException(Long id) {
-        super("Incident with ID " + id + " not found");
+        super(HttpStatus.NOT_FOUND, "INCIDENT_NOT_FOUND", "Incident with id " + id + " was not found");
     }
 }

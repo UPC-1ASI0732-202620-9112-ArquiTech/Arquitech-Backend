@@ -1,51 +1,40 @@
 package com.acme.arquitech.platform.machinery.domain.model.aggregates;
-
 import com.acme.arquitech.platform.machinery.domain.model.valueobjects.MachineryStatus;
 import com.acme.arquitech.platform.shared.domain.model.aggregates.AuditableAbstractAggregateRoot;
+import com.acme.arquitech.platform.shared.domain.exceptions.ApiException;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
-
-import java.util.Date;
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "machineries")
 @Getter
 @NoArgsConstructor
 public class Machinery extends AuditableAbstractAggregateRoot<Machinery> {
-
     @Column(name = "project_id", nullable = false)
     private Long projectId;
-
-    @Setter
     @Column(nullable = false)
     private String name;
-    @Setter
     @Column(name = "license_plate", nullable = false, unique = true)
-    private String licensePlate;
-    @Setter
+    private String serialNumber;
     @Column(name = "register_date", nullable = false)
-    @Temporal(TemporalType.DATE)
-    private Date registerDate;
-    @Setter
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    private LocalDate registeredAt;
+    @Enumerated(EnumType.STRING) @Column(nullable = false)
     private MachineryStatus status;
+    private String description;
 
-    public Machinery(Long projectId, String name, String licensePlate, Date registerDate, MachineryStatus status) {
+    public Machinery(Long projectId, String name, String serialNumber, LocalDate registeredAt,
+                     MachineryStatus status, String description) {
         this.projectId = projectId;
-        this.name = name;
-        this.licensePlate = licensePlate;
-        this.registerDate = registerDate;
-        this.status = status;
+        update(name, serialNumber, registeredAt, status, description);
     }
-
-    public Machinery update(String name, String licensePlate, Date registerDate, MachineryStatus status) {
+    public void update(String name, String serialNumber, LocalDate registeredAt, MachineryStatus status, String description) {
+        if (status != status.canonical()) throw ApiException.invalid("VALIDATION_ERROR", "Use a current machinery status");
         this.name = name;
-        this.licensePlate = licensePlate;
-        this.registerDate = registerDate;
+        this.serialNumber = serialNumber.trim();
+        this.registeredAt = registeredAt;
         this.status = status;
-        return this;
+        this.description = description;
     }
 }

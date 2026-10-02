@@ -1,124 +1,45 @@
 package com.acme.arquitech.platform.machinery.interfaces.rest;
-
 import com.acme.arquitech.platform.machinery.application.internal.commandservices.MachineryCommandServiceImpl;
-import com.acme.arquitech.platform.machinery.domain.exception.MachineryNotFoundException;
-import com.acme.arquitech.platform.machinery.domain.model.aggregates.Machinery;
-import com.acme.arquitech.platform.machinery.interfaces.rest.resources.CreateMachineryResource;
-import com.acme.arquitech.platform.machinery.interfaces.rest.resources.MachineryResource;
-import com.acme.arquitech.platform.machinery.interfaces.rest.resources.UpdateMachineryResource;
-import com.acme.arquitech.platform.shared.interfaces.rest.resources.MessageResource;
+import com.acme.arquitech.platform.machinery.application.internal.queryservices.MachineryQueryServiceImpl;
+import com.acme.arquitech.platform.machinery.interfaces.rest.resources.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.http.HttpStatus;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/v1/machinery")
-@Tag(name = "Machinery", description = "API for managing machinery in construction projects")
+@RequestMapping(value = "/api/v1/machinery", produces = "application/json")
+@Tag(name = "Machinery")
+@RequiredArgsConstructor
 public class MachineryController {
-
-    private final MachineryCommandServiceImpl machineryService;
-
-    public MachineryController(MachineryCommandServiceImpl machineryService) {
-        this.machineryService = machineryService;
-    }
-
-    @Operation(summary = "Create a new machinery entry")
-    @PostMapping
-    public ResponseEntity<?> createMachinery(@RequestBody CreateMachineryResource resource) {
-        try {
-            var machinery = machineryService.create(new Machinery(
-                    resource.projectId(),
-                    resource.name(),
-                    resource.licensePlate(),
-                    resource.registerDate(),
-                    resource.status()
-            ));
-            var machineryResource = new MachineryResource(
-                    machinery.getId(),
-                    machinery.getProjectId(),
-                    machinery.getName(),
-                    machinery.getLicensePlate(),
-                    machinery.getRegisterDate(),
-                    machinery.getStatus()
-            );
-            return new ResponseEntity<>(machineryResource, HttpStatus.CREATED);
-        } catch (IllegalArgumentException e) {
-            return new ResponseEntity<>(new MessageResource(e.getMessage()), HttpStatus.CONFLICT);
-        }
-    }
-
-    @Operation(summary = "Get all machinery")
+    private final MachineryCommandServiceImpl commandService;
+    private final MachineryQueryServiceImpl queryService;
     @GetMapping
-    public ResponseEntity<List<MachineryResource>> getAllMachinery() {
-        var machineries = machineryService.getAll();
-        var machineryResources = machineries.stream()
-                .map(m -> new MachineryResource(
-                        m.getId(),
-                        m.getProjectId(),
-                        m.getName(),
-                        m.getLicensePlate(),
-                        m.getRegisterDate(),
-                        m.getStatus()
-                ))
-                .collect(Collectors.toList());
-        return new ResponseEntity<>(machineryResources, HttpStatus.OK);
+    @Operation(summary = "List accessible machinery, optionally by project")
+    public List<MachineryResource> all(@RequestParam(required = false) Long projectId) {
+        return queryService.findAll(projectId).stream().map(MachineryResource::from).toList();
     }
-
-    @Operation(summary = "Get machinery by ID")
     @GetMapping("/{id}")
-    public ResponseEntity<MachineryResource> getMachineryById(@PathVariable Long id) {
-        var machinery = machineryService.getById(id)
-                .orElseThrow(() -> new MachineryNotFoundException(id));
-        var machineryResource = new MachineryResource(
-                machinery.getId(),
-                machinery.getProjectId(),
-                machinery.getName(),
-                machinery.getLicensePlate(),
-                machinery.getRegisterDate(),
-                machinery.getStatus()
-        );
-        return new ResponseEntity<>(machineryResource, HttpStatus.OK);
+    @Operation(summary = "Read machinery by ID")
+    public MachineryResource get(@PathVariable Long id) { return MachineryResource.from(queryService.findById(id)); }
+    @PostMapping
+    @Operation(summary = "Create machinery in a supervised project")
+    public ResponseEntity<MachineryResource> create(@Valid @RequestBody CreateMachineryResource resource) {
+        var result = MachineryResource.from(commandService.create(resource.toCommand()));
+        return ResponseEntity.created(java.net.URI.create("/api/v1/machinery/" + result.id())).body(result);
     }
-    @Operation(summary = "Update an existing machinery entry")
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateMachinery(@PathVariable Long id, @RequestBody UpdateMachineryResource resource) {
-        try {
-            var existingMachinery = machineryService.getById(id)
-                    .orElseThrow(() -> new MachineryNotFoundException(id));
-            var updatedMachinery = new Machinery(
-                    existingMachinery.getProjectId(),
-                    resource.name(),
-                    resource.licensePlate(),
-                    resource.registerDate(),
-                    resource.status()
-            );
-
-            var savedMachinery = machineryService.update(id, updatedMachinery);
-
-            var machineryResource = new MachineryResource(
-                    savedMachinery.getId(),
-                    savedMachinery.getProjectId(),
-                    savedMachinery.getName(),
-                    savedMachinery.getLicensePlate(),
-                    savedMachinery.getRegisterDate(),
-                    savedMachinery.getStatus()
-            );
-
-            return new ResponseEntity<>(machineryResource, HttpStatus.OK);
-        } catch (IllegalArgumentException e) {
-            return new ResponseEntity<>(new MessageResource(e.getMessage()), HttpStatus.BAD_REQUEST);
-        }
+    @Operation(summary = "Update machinery")
+    public MachineryResource update(@PathVariable Long id, @Valid @RequestBody UpdateMachineryResource resource) {
+        return MachineryResource.from(commandService.update(id, resource.toCommand()));
     }
-    @Operation(summary = "Delete machinery by ID")
     @DeleteMapping("/{id}")
-    public ResponseEntity<MessageResource> deleteMachinery(@PathVariable Long id) {
-        machineryService.getById(id).orElseThrow(() -> new MachineryNotFoundException(id));
-        machineryService.delete(id);
-        return ResponseEntity.ok(new MessageResource("Machinery deleted successfully"));
+    @Operation(summary = "Delete machinery")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        commandService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 }

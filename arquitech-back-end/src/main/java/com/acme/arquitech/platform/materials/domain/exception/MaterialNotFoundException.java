@@ -1,7 +1,8 @@
 package com.acme.arquitech.platform.materials.domain.exception;
-
-public class MaterialNotFoundException extends RuntimeException {
+import com.acme.arquitech.platform.shared.domain.exceptions.ApiException;
+import org.springframework.http.HttpStatus;
+public class MaterialNotFoundException extends ApiException {
     public MaterialNotFoundException(Long id) {
-        super("Material with ID " + id + " not found");
+        super(HttpStatus.NOT_FOUND, "MATERIAL_NOT_FOUND", "Material with id " + id + " was not found");
     }
 }

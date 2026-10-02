@@ -1,134 +1,60 @@
 package com.acme.arquitech.platform.iam.infrastructure.authorization.sfs.configuration;
 
 import com.acme.arquitech.platform.iam.infrastructure.authorization.sfs.pipeline.BearerAuthorizationRequestFilter;
-import com.acme.arquitech.platform.iam.infrastructure.hashing.bcrypt.BCryptHashingService;
 import com.acme.arquitech.platform.iam.infrastructure.tokens.jwt.BearerTokenService;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import com.acme.arquitech.platform.shared.interfaces.rest.resources.ErrorResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.*;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.web.AuthenticationEntryPoint;
-import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.*;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
-
+import java.util.Arrays;
 import java.util.List;
 
-/**
- * Web Security Configuration.
- * <p>
- * This class is responsible for configuring the web security.
- * It enables the method security and configures the security filter chain.
- * It includes the authentication manager, the authentication provider, the password encoder and the authentication entry point.
- * </p>
- */
 @Configuration
 @EnableMethodSecurity
 public class WebSecurityConfiguration {
-
-    private final UserDetailsService userDetailsService;
-
-    private final BearerTokenService tokenService;
-
-    private final BCryptHashingService hashingService;
-
-    private final AuthenticationEntryPoint unauthorizedRequestHandler;
-
-    /**
-     * This method creates the Bearer Authorization Request Filter.
-     * @return The Bearer Authorization Request Filter
-     * @see BearerAuthorizationRequestFilter
-     */
     @Bean
-    public BearerAuthorizationRequestFilter authorizationRequestFilter() {
-        return new BearerAuthorizationRequestFilter(tokenService, userDetailsService);
-    }
-
-    /**
-     * This method creates the authentication manager.
-     * @param authenticationConfiguration The {@link AuthenticationConfiguration} object with the authentication configuration
-     * @return The {@link AuthenticationManager} instance from the authentication configuration
-     *
-     */
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
-        return authenticationConfiguration.getAuthenticationManager();
-    }
-
-    /**
-     * This method creates the authentication provider.
-     * @return The {@link DaoAuthenticationProvider} authentication provider with the user details service and the password encoder
-     */
-    @Bean
-    public DaoAuthenticationProvider authenticationProvider() {
-        var authenticationProvider = new DaoAuthenticationProvider();
-        authenticationProvider.setUserDetailsService(userDetailsService);
-        authenticationProvider.setPasswordEncoder(hashingService);
-        return authenticationProvider;
-    }
-
-    /**
-     * This method creates the password encoder.
-     * @return The {@link PasswordEncoder} instance with the hashing service
-     */
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return this.hashingService;
-    }
-
-    /**
-     * This method creates the security filter chain.
-     * It also configures the http security.
-     *
-     * @param http The {@link HttpSecurity} object to configure with the security filter chain
-     * @return The {@link SecurityFilterChain} instance with the application http security configuration
-     */
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http.cors(configurer -> configurer.configurationSource(request -> {
+    public SecurityFilterChain filterChain(HttpSecurity http, BearerTokenService tokens,
+            UserDetailsService users, AuthenticationEntryPoint entryPoint, ObjectMapper mapper,
+            @Value("${cors.allowed-origins}") String allowedOrigins) throws Exception {
+        var origins = Arrays.stream(allowedOrigins.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        if (origins.stream().anyMatch(origin -> origin.contains("*")))
+            throw new IllegalArgumentException("CORS origins must be explicit");
+        http.cors(config -> config.configurationSource(request -> {
             var cors = new CorsConfiguration();
-            cors.setAllowedOrigins(List.of("*"));
+            cors.setAllowedOrigins(origins);
             cors.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
             cors.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+            cors.setExposedHeaders(List.of("Location", "Content-Disposition"));
             return cors;
         }));
-        http.csrf(csrfConfigurer -> csrfConfigurer.disable())
-                .exceptionHandling(exceptionHandling -> exceptionHandling.authenticationEntryPoint(unauthorizedRequestHandler))
-                .sessionManagement( customizer -> customizer.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(authorizeRequests -> authorizeRequests
-                        .requestMatchers(
-                                "/api/v1/authentication/**",
-                                "/v3/api-docs/**",
-                                "/swagger-ui.html",
-                                "/swagger-ui/**",
-                                "/swagger-resources/**",
-                                "/webjars/**",
-                                "/api/v1/authentication/signup").permitAll()
-                        .anyRequest().authenticated());
-        http.authenticationProvider(authenticationProvider());
-        http.addFilterBefore(authorizationRequestFilter(), UsernamePasswordAuthenticationFilter.class);
+        http.csrf(config -> config.disable())
+            .sessionManagement(config -> config.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .exceptionHandling(config -> config.authenticationEntryPoint(entryPoint)
+                .accessDeniedHandler((request, response, ex) -> {
+                    response.setStatus(403);
+                    response.setContentType("application/json");
+                    mapper.writeValue(response.getOutputStream(), ErrorResponse.of("FORBIDDEN", "Access denied", request.getRequestURI()));
+                }))
+            .authorizeHttpRequests(config -> config
+                .requestMatchers(HttpMethod.POST, "/api/v1/authentication/sign-in", "/api/v1/authentication/sign-up").permitAll()
+                .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/projects/**", "/api/v1/materials/**",
+                        "/api/v1/machinery/**", "/api/v1/workers/**", "/api/v1/tasks/**", "/api/v1/incidents/**").hasAuthority("SUPERVISOR")
+                .requestMatchers(HttpMethod.PUT, "/api/v1/projects/**", "/api/v1/materials/**",
+                        "/api/v1/machinery/**", "/api/v1/workers/**", "/api/v1/tasks/**", "/api/v1/incidents/**").hasAuthority("SUPERVISOR")
+                .requestMatchers(HttpMethod.DELETE, "/api/v1/projects/**", "/api/v1/materials/**",
+                        "/api/v1/machinery/**", "/api/v1/workers/**", "/api/v1/tasks/**", "/api/v1/incidents/**").hasAuthority("SUPERVISOR")
+                .anyRequest().authenticated());
+        // Construct here so Spring Boot does not also register this filter outside the security chain.
+        http.addFilterBefore(new BearerAuthorizationRequestFilter(tokens, users), UsernamePasswordAuthenticationFilter.class);
         return http.build();
-    }
-
-
-    /**
-     * This is the constructor of the class.
-     * @param userDetailsService The user details service
-     * @param tokenService The token service
-     * @param hashingService The hashing service
-     * @param authenticationEntryPoint The authentication entry point
-     */
-    public WebSecurityConfiguration(@Qualifier("defaultUserDetailsService") UserDetailsService userDetailsService, BearerTokenService tokenService, BCryptHashingService hashingService, AuthenticationEntryPoint authenticationEntryPoint) {
-        this.userDetailsService = userDetailsService;
-        this.tokenService = tokenService;
-        this.hashingService = hashingService;
-        this.unauthorizedRequestHandler = authenticationEntryPoint;
     }
 }

@@ -1,54 +1,36 @@
 package com.acme.arquitech.platform.materials.application.internal.queryservices;
-
-import com.acme.arquitech.platform.materials.domain.model.aggregates.Material;
-import com.acme.arquitech.platform.materials.domain.service.MaterialService;
-import com.acme.arquitech.platform.materials.infrastructure.persistence.jpa.repositories.MaterialRepository;
+import com.acme.arquitech.platform.projects.application.authorization.ProjectAccessService;
+import com.acme.arquitech.platform.materials.domain.exception.MaterialNotFoundException;
+import com.acme.arquitech.platform.materials.domain.model.aggregates.*;
+import com.acme.arquitech.platform.materials.infrastructure.persistence.jpa.repositories.*;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
+import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
-import java.util.Optional;
 
 @Service
-public class MaterialQueryServiceImpl implements MaterialService {
-
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class MaterialQueryServiceImpl {
     private final MaterialRepository materialRepository;
-
-    public MaterialQueryServiceImpl(MaterialRepository materialRepository) {
-        this.materialRepository = materialRepository;
+    private final MaterialMovementRepository movements;
+    private final ProjectAccessService access;
+    public Material findById(Long id) {
+        var material = materialRepository.findById(id).orElseThrow(() -> new MaterialNotFoundException(id));
+        access.requireRead(material.getProjectId());
+        return material;
     }
-
-    @Override
-    public Material createMaterial(Material material) {
-        throw new UnsupportedOperationException("Use command service for create operations");
+    public List<Material> findAll(Long projectId) {
+        var scope = access.scope(projectId);
+        return scope.isEmpty() ? List.of() : materialRepository.findByProjectIdIn(scope);
     }
-
-    @Override
-    public Optional<Material> findById(Long id) {
-        return materialRepository.findById(id);
+    public List<MaterialMovement> history(Long projectId, String materialName) {
+        access.requireRead(projectId);
+        return materialName == null ? movements.findByMaterialProjectIdOrderByOccurredAtAscIdAsc(projectId)
+                : movements.findByMaterialProjectIdAndMaterialNameOrderByOccurredAtAscIdAsc(projectId, materialName);
     }
-
-    @Override
-    public List<Material> findAllByProjectId(Long projectId) {
-        return materialRepository.findAllByProjectId(projectId);
-    }
-
-    @Override
-    public Material useMaterial(Long materialId, Integer quantity, String exitDate) {
-        throw new UnsupportedOperationException("Use command service for update operations");
-    }
-
-    @Override
-    public List<Material> getTransactionHistory(Long projectId, String materialName) {
-        return materialRepository.findAllByProjectIdAndName(projectId, materialName);
-    }
-
-    @Override
-    public boolean isLowInventory(Long materialId, Integer minimumLevel) {
-        return materialRepository.findById(materialId)
-                .map(material -> (material.getQuantity() - material.getQuantityExit()) < minimumLevel)
-                .orElse(false);
-    }
-    public List<Material> findAll() {
-        return materialRepository.findAll();
+    public boolean isLowInventory(Long id, Integer minimumLevel) {
+        var material = findById(id);
+        return material.getStock() < (minimumLevel == null ? material.getMinimumStock() : minimumLevel);
     }
 }

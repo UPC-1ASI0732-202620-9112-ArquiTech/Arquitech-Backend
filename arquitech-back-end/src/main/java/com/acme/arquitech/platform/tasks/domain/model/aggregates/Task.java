@@ -1,49 +1,54 @@
 package com.acme.arquitech.platform.tasks.domain.model.aggregates;
-
 import com.acme.arquitech.platform.projects.domain.model.aggregates.Project;
 import com.acme.arquitech.platform.shared.domain.model.aggregates.AuditableAbstractAggregateRoot;
+import com.acme.arquitech.platform.shared.domain.exceptions.ApiException;
 import com.acme.arquitech.platform.tasks.domain.model.valueobjects.TaskStatus;
 import com.acme.arquitech.platform.workers.domain.model.aggregates.Worker;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
-
-import java.time.LocalDate;
+import java.time.*;
 
 @Entity
 @Table(name = "tasks")
 @Getter
-@Setter
 @NoArgsConstructor
 public class Task extends AuditableAbstractAggregateRoot<Task> {
-    @ManyToOne
-    @JoinColumn(name = "id_project", nullable = false)
+    @ManyToOne @JoinColumn(name = "id_project", nullable = false)
     private Project project;
-
-    @ManyToOne
-    @JoinColumn(name = "id_worker", nullable = false)
+    @ManyToOne @JoinColumn(name = "id_worker", nullable = false)
     private Worker worker;
-
-    @Column(nullable = false)
+    private String title;
+    @Column(nullable = false, length = 400)
     private String description;
-
+    // Required by existing databases; retained outside the public contract.
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
-
     @Column(name = "due_date", nullable = false)
     private LocalDate dueDate;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Enumerated(EnumType.STRING) @Column(nullable = false)
     private TaskStatus status;
+    private OffsetDateTime completedAt;
 
-    public Task(Project project, Worker worker, String description, LocalDate startDate, LocalDate dueDate, TaskStatus status) {
+    public Task(Project project, Worker worker, String title, String description, LocalDate dueDate,
+                TaskStatus status, OffsetDateTime now) {
         this.project = project;
+        this.startDate = now.toLocalDate();
+        update(worker, title, description, dueDate, status, now);
+    }
+    public void update(Worker worker, String title, String description, LocalDate dueDate,
+                       TaskStatus status, OffsetDateTime now) {
+        if (!worker.getProject().getId().equals(project.getId()))
+            throw ApiException.invalid("VALIDATION_ERROR", "Worker must belong to the task project");
+        if (status == TaskStatus.DONE) throw ApiException.invalid("VALIDATION_ERROR", "Use COMPLETED");
+        if (status == TaskStatus.COMPLETED) {
+            if (this.status == null || this.status.canonical() != TaskStatus.COMPLETED) completedAt = now;
+        } else completedAt = null;
         this.worker = worker;
-        this.description = description;
-        this.startDate = startDate;
+        this.title = title;
+        this.description = description == null ? "" : description;
         this.dueDate = dueDate;
         this.status = status;
     }
+    public String getTitle() { return title == null ? description : title; }
 }

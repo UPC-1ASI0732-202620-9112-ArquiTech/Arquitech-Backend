@@ -1,10 +1,26 @@
 $ErrorActionPreference = 'Stop'
 
 function Test-Java17Home([string]$Candidate) {
-    if ([string]::IsNullOrWhiteSpace($Candidate)) { return $false }
+    if ([string]::IsNullOrWhiteSpace($Candidate)) {
+        return $false
+    }
+
     $javaExe = Join-Path $Candidate 'bin\java.exe'
-    if (-not (Test-Path -LiteralPath $javaExe -PathType Leaf)) { return $false }
-    $versionText = (& $javaExe -version 2>&1 | Out-String)
+
+    if (-not (Test-Path -LiteralPath $javaExe -PathType Leaf)) {
+        return $false
+    }
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+
+    try {
+        $versionText = (& $javaExe -version 2>&1 | Out-String)
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
     return $versionText -match '(?:java|openjdk) version "17(?:\.|\")'
 }
 
@@ -54,8 +70,16 @@ if ([string]::IsNullOrWhiteSpace($env:PROD_DB_PASSWORD)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($env:JWT_SECRET)) {
-    $secretBytes = [byte[]]::new(48)
-    [Security.Cryptography.RandomNumberGenerator]::Fill($secretBytes)
+    $secretBytes = New-Object byte[] 48
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+
+    try {
+        $rng.GetBytes($secretBytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
+
     $env:JWT_SECRET = [Convert]::ToBase64String($secretBytes)
     Write-Host 'JWT_SECRET temporal generado para esta ejecucion.'
 }

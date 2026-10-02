@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
+import java.math.BigDecimal;
 
 @Service
 @RequiredArgsConstructor
@@ -29,8 +30,8 @@ public class MaterialQueryServiceImpl {
         return materialName == null ? movements.findByMaterialProjectIdOrderByOccurredAtAscIdAsc(projectId)
                 : movements.findByMaterialProjectIdAndMaterialNameOrderByOccurredAtAscIdAsc(projectId, materialName);
     }
-    public boolean isLowInventory(Long id, Integer minimumLevel) {
+    public boolean isLowInventory(Long id, BigDecimal minimumLevel) {
         var material = findById(id);
-        return material.getStock() < (minimumLevel == null ? material.getMinimumStock() : minimumLevel);
+        return material.getStock().compareTo(minimumLevel == null ? material.getMinimumStock() : minimumLevel) < 0;
     }
 }

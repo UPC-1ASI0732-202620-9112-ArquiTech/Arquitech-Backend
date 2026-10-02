@@ -7,7 +7,8 @@ Main y develop conservan el commit base `34e4a6fa5206b47de4d35aa68975b67a6ae2fa6
 No se hizo push, merge ni despliegue.
 
 Se conservan Java 17, Spring Boot 3.5.0, MySQL, Maven, JWT Bearer, BCrypt, JPA, auditing, Swagger y los módulos existentes.
-No se modificaron el frontend ni el Project Report. No se añadieron pruebas, CI/CD, ProjectMember, Attendance ni WeeklyReport.
+La integración final también sincronizó Frontend Web y Project Report. Se añadieron pruebas de integración con
+H2; no se añadieron ProjectMember, Attendance ni una entidad persistente WeeklyReport.
 
 Commit de entrega: `feat(backend): complete REST contracts and project authorization`.
 Consultar su hash con `git log -1 --format="%h %s" feature/backend-completion`; también se entrega en el resumen final.
@@ -54,7 +55,8 @@ Contextos:
 
 Los estados actuales se añadieron a los enums sin retirar los valores persistidos antiguos.
 Se mantiene `AuditableAbstractAggregateRoot` y su auditing; User usa callback para su nueva fecha de creación.
-No se introduce Flyway ni un script destructivo.
+No se introduce Flyway. La conversión decimal se documenta mediante
+`docs/migrations/2026-10-material-quantities-decimal.sql`, un script no destructivo para ejecución controlada.
 
 ### Compatibilidad con Railway y datos históricos
 
@@ -232,7 +234,9 @@ Comprobaciones de la aplicación iniciada:
 - Revisión de @PathVariable, separación de servicios, referencias eliminadas y ausencia de logs JWT.
 - `git diff --check` sin errores. La prueba existente no se modificó.
 
-No se crearon ni ejecutaron suites unitarias, funcionales, BDD o de integración.
+La suite `ApiIntegrationTests` ejecuta cuatro escenarios end-to-end con múltiples operaciones y aserciones sobre
+autenticación, roles/scoping, Projects, Materials, Machinery, Workers, Tasks, Incidents, Users y OpenAPI.
+Usa H2 en modo MySQL y no depende de secretos ni de MySQL del desarrollador.
 
 ## Pendientes y cambios posteriores del frontend
 

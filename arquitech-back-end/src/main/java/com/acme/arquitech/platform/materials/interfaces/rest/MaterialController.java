@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
+import java.math.BigDecimal;
 
 @RestController
 @RequestMapping(value = "/api/v1/materials", produces = "application/json")
@@ -68,7 +69,7 @@ public class MaterialController {
     }
     @GetMapping("/{id}/low-inventory")
     @Operation(summary = "Check stock threshold", deprecated = true)
-    public LowInventoryResource lowInventory(@PathVariable Long id, @RequestParam(required = false) @PositiveOrZero Integer minimumLevel) {
+    public LowInventoryResource lowInventory(@PathVariable Long id, @RequestParam(required = false) @PositiveOrZero BigDecimal minimumLevel) {
         boolean low = queryService.isLowInventory(id, minimumLevel);
         return new LowInventoryResource(low, low ? "Material stock is below minimum level" : "Material stock is sufficient");
     }

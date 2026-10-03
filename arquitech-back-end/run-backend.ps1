@@ -1,42 +1,105 @@
-$java17 = $null
+$ErrorActionPreference = 'Stop'
 
-# Buscar Temurin / Adoptium
-$adoptium = Get-ChildItem "C:\Program Files\Eclipse Adoptium" `
-    -Directory `
-    -Filter "jdk-17*" `
-    -ErrorAction SilentlyContinue |
-    Sort-Object Name -Descending |
-    Select-Object -First 1
+function Test-Java17Home([string]$Candidate) {
+    if ([string]::IsNullOrWhiteSpace($Candidate)) {
+        return $false
+    }
 
-if ($adoptium) {
-    $java17 = $adoptium.FullName
+    $javaExe = Join-Path $Candidate 'bin\java.exe'
+
+    if (-not (Test-Path -LiteralPath $javaExe -PathType Leaf)) {
+        return $false
+    }
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+
+    try {
+        $versionText = (& $javaExe -version 2>&1 | Out-String)
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    return $versionText -match '(?:java|openjdk) version "17(?:\.|\")'
 }
 
-# Si no apareció, buscar instalaciones Java normales
-if (-not $java17) {
-    $java = Get-ChildItem "C:\Program Files\Java" `
-        -Directory `
-        -Filter "jdk-17*" `
-        -ErrorAction SilentlyContinue |
-        Sort-Object Name -Descending |
-        Select-Object -First 1
+$java17Home = $null
+if (Test-Java17Home $env:JAVA17_HOME) {
+    $java17Home = (Resolve-Path -LiteralPath $env:JAVA17_HOME).Path
+}
 
-    if ($java) {
-        $java17 = $java.FullName
+if (-not $java17Home) {
+    $searchRoots = @(
+        'C:\Program Files\Eclipse Adoptium',
+        'C:\Program Files\Java',
+        'C:\Program Files\Microsoft'
+    )
+    foreach ($root in $searchRoots) {
+        if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+        $candidates = Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '(?i)(jdk|java).*17|17.*(jdk|java)' } |
+            Sort-Object Name -Descending
+        foreach ($candidate in $candidates) {
+            if (Test-Java17Home $candidate.FullName) {
+                $java17Home = $candidate.FullName
+                break
+            }
+        }
+        if ($java17Home) { break }
     }
 }
 
-# Si no encuentra Java 17
-if (-not $java17) {
-    Write-Host "No se encontro JDK 17."
-    Write-Host "Instala Java 17 antes de ejecutar ArquiTech."
-    exit 1
+if (-not $java17Home) {
+    throw 'No se encontro un JDK 17 valido. Define JAVA17_HOME con la carpeta del JDK 17.'
 }
 
-$env:JAVA_HOME = $java17
-$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+$wrapper = Join-Path $PSScriptRoot 'mvnw.cmd'
+if (-not (Test-Path -LiteralPath $wrapper -PathType Leaf)) {
+    throw "No se encontro Maven Wrapper en $wrapper"
+}
 
-Write-Host "Usando:"
-java -version
+if ([string]::IsNullOrWhiteSpace($env:PROD_DB_PASSWORD)) {
+    $securePassword = Read-Host 'Contrasena local de MySQL (PROD_DB_PASSWORD)' -AsSecureString
+    $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+    try {
+        $env:PROD_DB_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
+    } finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
+    }
+}
 
-.\mvnw.cmd spring-boot:run
+if ([string]::IsNullOrWhiteSpace($env:JWT_SECRET)) {
+    $secretBytes = New-Object byte[] 48
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+
+    try {
+        $rng.GetBytes($secretBytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
+
+    $env:JWT_SECRET = [Convert]::ToBase64String($secretBytes)
+    Write-Host 'JWT_SECRET temporal generado para esta ejecucion.'
+}
+
+if ([string]::IsNullOrWhiteSpace($env:PROD_DB_USERNAME)) { $env:PROD_DB_USERNAME = 'root' }
+if ([string]::IsNullOrWhiteSpace($env:PORT)) { $env:PORT = '8080' }
+if ([string]::IsNullOrWhiteSpace($env:DDL_AUTO)) { $env:DDL_AUTO = 'update' }
+if ([string]::IsNullOrWhiteSpace($env:SHOW_SQL)) { $env:SHOW_SQL = 'false' }
+if ([string]::IsNullOrWhiteSpace($env:CORS_ALLOWED_ORIGINS)) { $env:CORS_ALLOWED_ORIGINS = 'http://localhost:4200' }
+
+# Environment changes are scoped to this PowerShell process and its Maven child process.
+$env:JAVA_HOME = $java17Home
+$env:Path = "$(Join-Path $java17Home 'bin');$env:Path"
+
+Write-Host "Usando JDK 17: $java17Home"
+& (Join-Path $java17Home 'bin\java.exe') -version
+Push-Location $PSScriptRoot
+try {
+    & $wrapper spring-boot:run
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} finally {
+    Pop-Location
+}

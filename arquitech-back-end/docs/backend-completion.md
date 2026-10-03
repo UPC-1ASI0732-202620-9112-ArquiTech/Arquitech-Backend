@@ -7,7 +7,8 @@ Main y develop conservan el commit base `34e4a6fa5206b47de4d35aa68975b67a6ae2fa6
 No se hizo push, merge ni despliegue.
 
 Se conservan Java 17, Spring Boot 3.5.0, MySQL, Maven, JWT Bearer, BCrypt, JPA, auditing, Swagger y los módulos existentes.
-No se modificaron el frontend ni el Project Report. No se añadieron pruebas, CI/CD, ProjectMember, Attendance ni WeeklyReport.
+La integración final también sincronizó Frontend Web y Project Report. Se añadieron pruebas de integración con
+H2; no se añadieron ProjectMember, Attendance ni una entidad persistente WeeklyReport.
 
 Commit de entrega: `feat(backend): complete REST contracts and project authorization`.
 Consultar su hash con `git log -1 --format="%h %s" feature/backend-completion`; también se entrega en el resumen final.
@@ -54,7 +55,8 @@ Contextos:
 
 Los estados actuales se añadieron a los enums sin retirar los valores persistidos antiguos.
 Se mantiene `AuditableAbstractAggregateRoot` y su auditing; User usa callback para su nueva fecha de creación.
-No se introduce Flyway ni un script destructivo.
+No se introduce Flyway. La conversión decimal se documenta mediante
+`docs/migrations/2026-10-material-quantities-decimal.sql`, un script no destructivo para ejecución controlada.
 
 ### Compatibilidad con Railway y datos históricos
 
@@ -83,10 +85,10 @@ Las columnas existentes no fueron inspeccionadas en Railway. No se afirma que un
 - Todas las listas se limitan a proyectos accesibles. Los filtros de proyecto se resuelven en SQL.
 - SUPERVISOR: crear proyectos a su propio nombre y escribir recursos de proyectos que supervisa.
 - CONTRACTOR: consultar proyectos donde aparece como contratante, recursos e historial; 403 al intentar escribir recursos de obra.
-- Se comprueba acceso directo e indirecto a materiales, movimientos, maquinaria, trabajadores, tareas, incidencias y PDF.
+- Se comprueba acceso directo e indirecto a materiales, movimientos, maquinaria, trabajadores, tareas e incidencias.
 - `GET /users` solo SUPERVISOR. `GET /users/{id}`: supervisor o usuario consultando su propio perfil.
-- `PUT /users/{id}`: solo el propio usuario, únicamente nombre y teléfono. Otros campos producen VALIDATION_ERROR.
-- `GET /projects/supervisor/{userId}` y `/contractor/{userId}`: deben coincidir ID y rol autenticados.
+- `GET /projects/supervisor/{userId}` exige que el ID coincida con el Supervisor autenticado.
+- `GET /projects` resuelve en servidor el alcance de Supervisor y Contractor; no depende del filtrado Angular.
 - Stock y cantidad acumulada cambian solo por operaciones de entrada/uso; PUT no los admite.
 - Material entry/use usa bloqueo pesimista y una transacción común con el movimiento; stock insuficiente falla antes de mutar el saldo.
 - La asignación de trabajador valida el proyecto. El proyecto de un recurso existente no se puede cambiar mediante PUT.
@@ -95,7 +97,7 @@ Las columnas existentes no fueron inspeccionadas en Railway. No se afirma que un
 
 ### Endpoints finales
 
-26 rutas, 43 operaciones documentadas. La siguiente tabla proviene del OpenAPI generado en el arranque final.
+21 rutas, 32 operaciones documentadas. La siguiente tabla proviene del OpenAPI generado por la suite final.
 
 | Método | Ruta | Uso |
 | --- | --- | --- |
@@ -103,17 +105,13 @@ Las columnas existentes no fueron inspeccionadas en Railway. No se afirma que un
 | PUT | `/api/v1/workers/{id}` | Update workers |
 | DELETE | `/api/v1/workers/{id}` | Delete workers |
 | GET | `/api/v1/users/{id}` | Read a user profile |
-| PUT | `/api/v1/users/{id}` | Update your own name and phone |
-| GET | `/api/v1/tasks/{id}` | Read tasks by ID |
 | PUT | `/api/v1/tasks/{id}` | Update tasks |
 | DELETE | `/api/v1/tasks/{id}` | Delete tasks |
-| GET | `/api/v1/materials/{id}` | Read a material |
 | PUT | `/api/v1/materials/{id}` | Update descriptive material fields |
 | DELETE | `/api/v1/materials/{id}` | Delete material and its movement history |
 | GET | `/api/v1/machinery/{id}` | Read machinery by ID |
 | PUT | `/api/v1/machinery/{id}` | Update machinery |
 | DELETE | `/api/v1/machinery/{id}` | Delete machinery |
-| GET | `/api/v1/incidents/{id}` | Read an incident |
 | PUT | `/api/v1/incidents/{id}` | Update an incident and its resolution status |
 | DELETE | `/api/v1/incidents/{id}` | Delete an incident |
 | GET | `/api/v1/workers` | List accessible workers, optionally by project |
@@ -122,29 +120,22 @@ Las columnas existentes no fueron inspeccionadas en Railway. No se afirma que un
 | POST | `/api/v1/tasks` | Create tasks in a supervised project |
 | GET | `/api/v1/projects` | List your accessible projects |
 | POST | `/api/v1/projects` | Create a project as its supervisor |
-| GET | `/api/v1/materials` | List materials in your projects |
 | POST | `/api/v1/materials` | Create material and initial entry |
 | POST | `/api/v1/materials/{id}/use` | Consume stock and record usage |
 | POST | `/api/v1/materials/{id}/entry` | Receive stock and record an entry |
 | GET | `/api/v1/machinery` | List accessible machinery, optionally by project |
 | POST | `/api/v1/machinery` | Create machinery in a supervised project |
-| GET | `/api/v1/incidents` | List accessible incidents, optionally by project |
 | POST | `/api/v1/incidents` | Report an incident as the authenticated supervisor |
 | POST | `/api/v1/authentication/sign-up` | Register a supervisor or contractor |
 | POST | `/api/v1/authentication/sign-in` | Sign in using email and password |
 | GET | `/api/v1/users` | List users for project assignment |
-| GET | `/api/v1/projects/{id}` | Read an accessible project |
 | GET | `/api/v1/projects/supervisor/{userId}` | List your supervised projects |
-| GET | `/api/v1/projects/contractor/{userId}` | List your contracted projects |
-| GET | `/api/v1/materials/{id}/low-inventory` | Legacy deprecado |
 | GET | `/api/v1/materials/project/{projectId}` | List materials in a project |
 | GET | `/api/v1/materials/project/{projectId}/history` | List all project material movements |
-| GET | `/api/v1/materials/project/{projectId}/history/{materialName}` | Legacy deprecado |
-| GET | `/api/v1/incidents/{id}/report` | Download the individual incident PDF |
 | GET | `/api/v1/incidents/project/{projectId}` | List incidents in a project |
 
-Los dos endpoints legacy de materiales están deprecados en OpenAPI. El historial por nombre ahora devuelve MaterialMovementResource.
-El PDF individual de incidente se conserva con iText; no crea un reporte semanal de backend.
+El API público no conserva endpoints legacy de materiales ni el PDF individual de incidencia.
+El reporte semanal continúa consolidándose y generándose en Angular.
 
 ## Seguridad y errores
 
@@ -223,7 +214,7 @@ No se usaron credenciales de producción. El proceso temporal fue detenido al te
 Comprobaciones de la aplicación iniciada:
 
 - GET /v3/api-docs accesible y título ArquiTech REST API.
-- 43 operaciones, 26 rutas; POST documentados con 201 y esquema del recurso.
+- 32 operaciones, 21 rutas; POST documentados con 201 y esquema del recurso.
 - Seguridad de sign-in/sign-up vacía; Bearer global para los demás.
 - Enums publicados sin valores legacy y ninguna propiedad snake_case.
 - Password aparece solo en DTO de entrada de autenticación, nunca en DTO de respuesta.
@@ -232,7 +223,9 @@ Comprobaciones de la aplicación iniciada:
 - Revisión de @PathVariable, separación de servicios, referencias eliminadas y ausencia de logs JWT.
 - `git diff --check` sin errores. La prueba existente no se modificó.
 
-No se crearon ni ejecutaron suites unitarias, funcionales, BDD o de integración.
+La suite `ApiIntegrationTests` ejecuta cuatro escenarios end-to-end con múltiples operaciones y aserciones sobre
+autenticación, roles/scoping, Projects, Materials, Machinery, Workers, Tasks, Incidents, Users y OpenAPI.
+Usa H2 en modo MySQL y no depende de secretos ni de MySQL del desarrollador.
 
 ## Pendientes y cambios posteriores del frontend
 
@@ -246,8 +239,8 @@ Pendientes de entorno/segunda etapa:
 Cambios posteriores del frontend, sin editarlo en esta tarea:
 
 - Configurar `apiBaseUrl`, el origen en CORS y `useMockApi: false` después de desplegar.
-- Reemplazar el almacenamiento local de nombre/teléfono por PUT /users/{id}; empresa y preferencias de UI siguen fuera de ese contrato.
-- Usar GET /projects/contractor/{userId} si se desea; GET /projects ya filtra correctamente.
+- El perfil continúa almacenándose localmente; SP-03 evaluará una migración posterior.
+- GET /projects ya filtra correctamente para Contractor y Supervisor.
 - Eliminar filtros redundantes de seguridad en maquinaria/trabajadores/tareas cuando el equipo lo considere; el servidor ya aplica el alcance.
 - Dejar de enviar completedAt/resolvedAt y autor de incidencia; se aceptan por compatibilidad pero los decide el servidor.
 - Adaptar el borrado de trabajador a 409 WORKER_HAS_TASKS: reasignar/eliminar tareas antes.

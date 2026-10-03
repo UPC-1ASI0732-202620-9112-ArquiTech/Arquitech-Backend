@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
@@ -22,14 +23,11 @@ public class TaskController {
     public List<TaskResource> all(@RequestParam(required = false) Long projectId) {
         return queryService.findAll(projectId).stream().map(TaskResource::from).toList();
     }
-    @GetMapping("/{id}")
-    @Operation(summary = "Read tasks by ID")
-    public TaskResource get(@PathVariable Long id) { return TaskResource.from(queryService.findById(id)); }
     @PostMapping
     @Operation(summary = "Create tasks in a supervised project")
     public ResponseEntity<TaskResource> create(@Valid @RequestBody CreateTaskResource resource) {
         var result = TaskResource.from(commandService.create(resource.toCommand()));
-        return ResponseEntity.created(java.net.URI.create("/api/v1/tasks/" + result.id())).body(result);
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
     @PutMapping("/{id}")
     @Operation(summary = "Update tasks")

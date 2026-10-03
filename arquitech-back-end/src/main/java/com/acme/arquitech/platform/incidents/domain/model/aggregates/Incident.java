@@ -40,7 +40,8 @@ public class Incident extends AuditableAbstractAggregateRoot<Incident> {
     }
 
     public void update(String type, String description, IncidentSeverity severity, IncidentStatus status, OffsetDateTime now) {
-        if (status == IncidentStatus.PENDING) throw ApiException.invalid("VALIDATION_ERROR", "Use OPEN");
+        // Keep deserializing the legacy enum value so clients receive a controlled 400 response.
+        if ("PENDING".equals(status.name())) throw ApiException.invalid("VALIDATION_ERROR", "Use OPEN");
         if (status == IncidentStatus.RESOLVED) {
             if (this.status != IncidentStatus.RESOLVED) resolvedAt = now;
         } else resolvedAt = null;

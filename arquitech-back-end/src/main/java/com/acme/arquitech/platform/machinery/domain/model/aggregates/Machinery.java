@@ -8,7 +8,9 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDate;
 
 @Entity
-@Table(name = "machineries")
+@Table(name = "machineries", uniqueConstraints = @UniqueConstraint(
+        name = "uk_machineries_project_serial",
+        columnNames = {"project_id", "license_plate"}))
 @Getter
 @NoArgsConstructor
 public class Machinery extends AuditableAbstractAggregateRoot<Machinery> {
@@ -16,7 +18,7 @@ public class Machinery extends AuditableAbstractAggregateRoot<Machinery> {
     private Long projectId;
     @Column(nullable = false)
     private String name;
-    @Column(name = "license_plate", nullable = false, unique = true)
+    @Column(name = "license_plate", nullable = false)
     private String serialNumber;
     @Column(name = "register_date", nullable = false)
     private LocalDate registeredAt;

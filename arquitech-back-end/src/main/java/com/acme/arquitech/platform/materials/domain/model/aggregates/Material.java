@@ -15,9 +15,13 @@ import java.time.LocalDate;
 public class Material extends AuditableAbstractAggregateRoot<Material> {
     private Long projectId;
     private String name;
-    private Integer quantity;
-    private Integer stock;
-    private Integer minimumStock;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal quantity;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal stock;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal minimumStock;
+    @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal unitPrice;
     private String unit;
     private String provider;
@@ -33,9 +37,9 @@ public class Material extends AuditableAbstractAggregateRoot<Material> {
     @Deprecated private String exitType;
     @Deprecated private String exitDate;
 
-    public Material(Long projectId, String name, String unit, Integer quantity, Integer minimumStock,
+    public Material(Long projectId, String name, String unit, BigDecimal quantity, BigDecimal minimumStock,
                     BigDecimal unitPrice, String provider, String providerRuc, LocalDate date) {
-        if (quantity < 0) throw new InvalidMaterialDataException("Quantity must be non-negative");
+        if (quantity.compareTo(BigDecimal.ZERO) < 0) throw new InvalidMaterialDataException("Quantity must be non-negative");
         this.projectId = projectId;
         this.quantity = quantity;
         this.stock = quantity;
@@ -43,9 +47,10 @@ public class Material extends AuditableAbstractAggregateRoot<Material> {
         updateDetails(name, unit, minimumStock, unitPrice, provider, providerRuc);
     }
 
-    public void updateDetails(String name, String unit, Integer minimumStock, BigDecimal unitPrice,
+    public void updateDetails(String name, String unit, BigDecimal minimumStock, BigDecimal unitPrice,
                               String provider, String providerRuc) {
-        if (minimumStock < 0 || unitPrice.signum() < 0) throw new InvalidMaterialDataException("Negative price or minimum stock");
+        if (minimumStock.compareTo(BigDecimal.ZERO) < 0 || unitPrice.signum() < 0)
+            throw new InvalidMaterialDataException("Negative price or minimum stock");
         this.name = name;
         this.unit = unit;
         this.minimumStock = minimumStock;
@@ -55,28 +60,24 @@ public class Material extends AuditableAbstractAggregateRoot<Material> {
     }
 
     // Read compatibility for rows created before stock existed; the first write persists the baseline.
-    public Integer getStock() {
-        return stock != null ? stock : Math.max(0, quantity - (quantityExit == null ? 0 : quantityExit));
+    public BigDecimal getStock() {
+        if (stock != null) return stock;
+        var legacyExit = BigDecimal.valueOf(quantityExit == null ? 0 : quantityExit);
+        return quantity.subtract(legacyExit).max(BigDecimal.ZERO);
     }
-    public Integer getMinimumStock() { return minimumStock == null ? 0 : minimumStock; }
+    public BigDecimal getMinimumStock() { return minimumStock == null ? BigDecimal.ZERO : minimumStock; }
 
-    public void enter(int amount, LocalDate occurredOn) {
-        if (amount <= 0) throw new InvalidMaterialDataException("Quantity must be positive");
-        try {
-            int nextQuantity = Math.addExact(quantity, amount);
-            int nextStock = Math.addExact(getStock(), amount);
-            quantity = nextQuantity;
-            stock = nextStock;
-        } catch (ArithmeticException ex) {
-            throw new InvalidMaterialDataException("Quantity exceeds supported range");
-        }
+    public void enter(BigDecimal amount, LocalDate occurredOn) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) throw new InvalidMaterialDataException("Quantity must be positive");
+        quantity = quantity.add(amount);
+        stock = getStock().add(amount);
         updateStockDate(occurredOn);
     }
 
-    public void use(int amount, LocalDate occurredOn) {
-        if (amount <= 0) throw new InvalidMaterialDataException("Quantity must be positive");
-        if (amount > getStock()) throw new InsufficientStockException(id);
-        stock = getStock() - amount;
+    public void use(BigDecimal amount, LocalDate occurredOn) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) throw new InvalidMaterialDataException("Quantity must be positive");
+        if (amount.compareTo(getStock()) > 0) throw new InsufficientStockException(id);
+        stock = getStock().subtract(amount);
         updateStockDate(occurredOn);
     }
 

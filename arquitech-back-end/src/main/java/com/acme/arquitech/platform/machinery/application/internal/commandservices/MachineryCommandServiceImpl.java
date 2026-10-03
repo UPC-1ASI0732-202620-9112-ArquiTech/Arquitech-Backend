@@ -21,14 +21,15 @@ public class MachineryCommandServiceImpl implements MachineryService {
     private final ProjectAccessService access;
     public Machinery create(CreateMachineryCommand r) {
         access.requireWrite(r.projectId());
-        if (repository.existsBySerialNumber(r.serialNumber().trim())) throw duplicate();
+        if (repository.existsByProjectIdAndSerialNumber(r.projectId(), r.serialNumber().trim())) throw duplicate();
         return save(new Machinery(r.projectId(), r.name(), r.serialNumber(), r.registeredAt(), r.status(), r.description()));
     }
     public Machinery update(Long id, UpdateMachineryCommand r) {
         var entity = writable(id);
         if (r.projectId() != null && !entity.getProjectId().equals(r.projectId()))
             throw ApiException.invalid("VALIDATION_ERROR", "projectId cannot be changed");
-        if (repository.existsBySerialNumberAndIdNot(r.serialNumber().trim(), id)) throw duplicate();
+        if (repository.existsByProjectIdAndSerialNumberAndIdNot(
+                entity.getProjectId(), r.serialNumber().trim(), id)) throw duplicate();
         entity.update(r.name(), r.serialNumber(), r.registeredAt(), r.status(), r.description());
         return save(entity);
     }
@@ -46,6 +47,7 @@ public class MachineryCommandServiceImpl implements MachineryService {
         }
     }
     private ApiException duplicate() {
-        return ApiException.conflict("DUPLICATED_SERIAL_NUMBER", "A machinery with this serial number already exists");
+        return ApiException.conflict("DUPLICATED_SERIAL_NUMBER",
+                "A machinery with this serial number already exists in the project");
     }
 }

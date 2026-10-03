@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import java.time.OffsetDateTime;
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "material_movements")
@@ -18,8 +19,8 @@ public class MaterialMovement {
     private Material material;
     @Enumerated(EnumType.STRING) @Column(nullable = false)
     private MovementType type;
-    @Column(nullable = false)
-    private Integer quantity;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal quantity;
     private String supplier;
     @ManyToOne(optional = false)
     @JoinColumn(name = "registered_by_user_id", nullable = false)
@@ -29,7 +30,7 @@ public class MaterialMovement {
     @Column(length = 2000)
     private String note;
 
-    public MaterialMovement(Material material, MovementType type, Integer quantity, String supplier,
+    public MaterialMovement(Material material, MovementType type, BigDecimal quantity, String supplier,
                             User registeredBy, OffsetDateTime occurredAt, String note) {
         this.material = material;
         this.type = type;

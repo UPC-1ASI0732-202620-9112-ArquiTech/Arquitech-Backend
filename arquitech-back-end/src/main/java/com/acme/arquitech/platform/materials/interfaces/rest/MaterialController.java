@@ -5,12 +5,10 @@ import com.acme.arquitech.platform.materials.interfaces.rest.resources.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.PositiveOrZero;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
-import java.math.BigDecimal;
 
 @RestController
 @RequestMapping(value = "/api/v1/materials", produces = "application/json")
@@ -19,17 +17,11 @@ import java.math.BigDecimal;
 public class MaterialController {
     private final MaterialCommandServiceImpl commandService;
     private final MaterialQueryServiceImpl queryService;
-    @GetMapping
-    @Operation(summary = "List materials in your projects")
-    public List<MaterialResource> all(@RequestParam(required = false) Long projectId) {
-        return queryService.findAll(projectId).stream().map(MaterialResource::from).toList();
-    }
-    @GetMapping("/{id}")
-    @Operation(summary = "Read a material")
-    public MaterialResource get(@PathVariable Long id) { return MaterialResource.from(queryService.findById(id)); }
     @GetMapping("/project/{projectId}")
     @Operation(summary = "List materials in a project")
-    public List<MaterialResource> byProject(@PathVariable Long projectId) { return all(projectId); }
+    public List<MaterialResource> byProject(@PathVariable Long projectId) {
+        return queryService.findAll(projectId).stream().map(MaterialResource::from).toList();
+    }
     @PostMapping
     @Operation(summary = "Create material and initial entry")
     public ResponseEntity<MaterialResource> create(@Valid @RequestBody CreateMaterialResource r) {
@@ -61,16 +53,5 @@ public class MaterialController {
     @Operation(summary = "List all project material movements")
     public List<MaterialMovementResource> history(@PathVariable Long projectId) {
         return queryService.history(projectId, null).stream().map(MaterialMovementResource::from).toList();
-    }
-    @GetMapping("/project/{projectId}/history/{materialName}")
-    @Operation(summary = "List movements by material name", deprecated = true)
-    public List<MaterialMovementResource> legacyHistory(@PathVariable Long projectId, @PathVariable String materialName) {
-        return queryService.history(projectId, materialName).stream().map(MaterialMovementResource::from).toList();
-    }
-    @GetMapping("/{id}/low-inventory")
-    @Operation(summary = "Check stock threshold", deprecated = true)
-    public LowInventoryResource lowInventory(@PathVariable Long id, @RequestParam(required = false) @PositiveOrZero BigDecimal minimumLevel) {
-        boolean low = queryService.isLowInventory(id, minimumLevel);
-        return new LowInventoryResource(low, low ? "Material stock is below minimum level" : "Material stock is sufficient");
     }
 }

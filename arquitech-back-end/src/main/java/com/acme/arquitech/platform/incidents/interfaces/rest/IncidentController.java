@@ -17,17 +17,11 @@ import java.util.List;
 public class IncidentController {
     private final IncidentCommandServiceImpl commandService;
     private final IncidentQueryServiceImpl queryService;
-    @GetMapping
-    @Operation(summary = "List accessible incidents, optionally by project")
-    public List<IncidentResource> all(@RequestParam(required = false) Long projectId) {
-        return queryService.findAll(projectId).stream().map(IncidentResource::from).toList();
-    }
-    @GetMapping("/{id}")
-    @Operation(summary = "Read an incident")
-    public IncidentResource get(@PathVariable Long id) { return IncidentResource.from(queryService.findById(id)); }
     @GetMapping("/project/{projectId}")
     @Operation(summary = "List incidents in a project")
-    public List<IncidentResource> project(@PathVariable Long projectId) { return all(projectId); }
+    public List<IncidentResource> project(@PathVariable Long projectId) {
+        return queryService.findAll(projectId).stream().map(IncidentResource::from).toList();
+    }
     @PostMapping
     @Operation(summary = "Report an incident as the authenticated supervisor")
     public ResponseEntity<IncidentResource> create(@Valid @RequestBody CreateIncidentResource r) {
@@ -44,12 +38,5 @@ public class IncidentController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         commandService.delete(id);
         return ResponseEntity.noContent().build();
-    }
-    @GetMapping(value = "/{id}/report", produces = MediaType.APPLICATION_PDF_VALUE)
-    @Operation(summary = "Download the individual incident PDF")
-    public ResponseEntity<byte[]> report(@PathVariable Long id) {
-        return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=incident-report-" + id + ".pdf")
-                .body(queryService.generatePdfReport(id));
     }
 }

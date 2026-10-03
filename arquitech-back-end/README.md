@@ -84,7 +84,6 @@ Se conserva `AuditableAbstractAggregateRoot`.
 - Las operaciones de escritura de recursos de obra requieren SUPERVISOR, tanto en Spring Security como en los command services.
 - La validación de proyecto se aplica a listas, identificadores individuales, movimientos y PDF.
 - `GET /users` es exclusivo de SUPERVISOR. Un supervisor puede consultar perfiles para asignar contratantes; los demás usuarios solo su perfil.
-- `PUT /users/{id}` acepta exclusivamente `fullName` y `phone`, y requiere que `id` sea el usuario autenticado.
 - `USER` se conserva para leer cuentas antiguas; no se admite en nuevos registros ni permite acceder a proyectos.
 
 ## Rutas
@@ -94,27 +93,23 @@ Todas llevan el prefijo `/api/v1`.
 | Recurso | Operaciones |
 | --- | --- |
 | Authentication | POST `/authentication/sign-in`, POST `/authentication/sign-up` |
-| Users | GET `/users`, GET/PUT `/users/{id}` |
-| Projects | GET/POST `/projects`, GET `/projects/{id}`, GET `/projects/supervisor/{userId}`, GET `/projects/contractor/{userId}` |
-| Materials | GET/POST `/materials`, GET/PUT/DELETE `/materials/{id}`, GET `/materials/project/{projectId}` |
-| Material movements | POST `/materials/{id}/entry`, POST `/materials/{id}/use`, GET `/materials/project/{projectId}/history`, GET legacy `/materials/project/{projectId}/history/{materialName}`, GET legacy `/materials/{id}/low-inventory` |
+| Users | GET `/users`, GET `/users/{id}` |
+| Projects | GET/POST `/projects`, GET `/projects/supervisor/{userId}` |
+| Materials | POST `/materials`, PUT/DELETE `/materials/{id}`, GET `/materials/project/{projectId}` |
+| Material movements | POST `/materials/{id}/entry`, POST `/materials/{id}/use`, GET `/materials/project/{projectId}/history` |
 | Machinery | GET/POST `/machinery`, GET/PUT/DELETE `/machinery/{id}` |
 | Workers | GET/POST `/workers`, GET/PUT/DELETE `/workers/{id}` |
-| Tasks | GET/POST `/tasks`, GET/PUT/DELETE `/tasks/{id}` |
-| Incidents | GET/POST `/incidents`, GET/PUT/DELETE `/incidents/{id}`, GET `/incidents/project/{projectId}`, GET `/incidents/{id}/report` |
+| Tasks | GET/POST `/tasks`, PUT/DELETE `/tasks/{id}` |
+| Incidents | POST `/incidents`, PUT/DELETE `/incidents/{id}`, GET `/incidents/project/{projectId}` |
 
-Las listas de materiales, maquinaria, trabajadores, tareas e incidencias aceptan `?projectId=`.
-El filtro se aplica en base de datos y comprueba acceso. Sin filtro, solo se consultan proyectos accesibles.
-Los endpoints de supervisor/contratante requieren el ID y rol del propio usuario autenticado.
+Maquinaria, trabajadores y tareas aceptan `?projectId=`. Materiales e incidencias usan su ruta por proyecto.
+El filtro se aplica en base de datos y comprueba acceso. `GET /projects` devuelve solo los proyectos accesibles
+del usuario autenticado; no existe un endpoint público separado para Contractor.
 
 Creaciones: **201** con recurso. Actualizaciones: **200** con recurso. Eliminaciones: **204**.
 Listas vacías: **200** con `[]`. Las respuestas JSON usan **camelCase**.
-Fechas de calendario: `YYYY-MM-DD`; movimientos/incidencias: ISO 8601 con offset, normalizado a UTC al persistir.
-
-Rutas legacy conservadas y deprecadas en Swagger:
-
-- GET `/materials/project/{projectId}/history/{materialName}`: devuelve movimientos reales filtrados por nombre.
-- GET `/materials/{id}/low-inventory?minimumLevel=...`: devuelve `lowInventory` y el `message` legacy. Sin mínimo usa `minimumStock`.
+La creación de material admite `YYYY-MM-DD` o un datetime ISO 8601 con offset y lo normaliza a `LocalDate`.
+Movimientos e incidencias conservan ISO 8601 con offset.
 
 ## Reglas principales
 
@@ -125,7 +120,7 @@ Rutas legacy conservadas y deprecadas en Swagger:
 - `PUT /materials/{id}` solo modifica descripción del material; rechaza `stock` y `quantity`.
 - El RUC sigue la validación del frontend: 11 dígitos empezando por 10, 15, 17 o 20.
 - Al borrar material se elimina explícitamente su historial en la misma transacción.
-- Número de serie de maquinaria único, incluso en actualización; conflicto `DUPLICATED_SERIAL_NUMBER`.
+- Número de serie de maquinaria único dentro de cada proyecto, incluso en actualización; conflicto `DUPLICATED_SERIAL_NUMBER`.
 - El proyecto de maquinaria/trabajadores/tareas/incidencias no se cambia por PUT; si se envía debe coincidir.
 - Un trabajador asignado a una tarea debe pertenecer al mismo proyecto. No se puede borrar un trabajador con tareas: `409 WORKER_HAS_TASKS`.
 - `completedAt` y `resolvedAt` se fijan al entrar en el estado final, se conservan si permanece y se limpian al reabrir.
@@ -167,10 +162,10 @@ El reporte semanal sigue a cargo del frontend.
 
 ## Operaciones y pruebas
 
-OpenAPI expone **43 operaciones**. `POST /authentication/sign-in` y `sign-up` son públicas;
+OpenAPI expone **32 operaciones**. `POST /authentication/sign-in` y `sign-up` son públicas;
 las otras operaciones requieren Bearer JWT. La suite `ApiIntegrationTests` cubre autenticación,
 roles, scoping por proyecto, Materials decimales y transaccionales, CRUD/reglas de maquinaria,
-trabajadores, tareas, incidencias, perfil y disponibilidad de `/v3/api-docs`.
+trabajadores, tareas, incidencias, Users y disponibilidad de `/v3/api-docs`.
 
 ```powershell
 .\mvnw.cmd clean test
@@ -183,6 +178,12 @@ Hibernate `DDL_AUTO=update` puede convertir las columnas existentes, pero en pro
 respaldar la base y ejecutar de forma controlada
 [`docs/migrations/2026-10-material-quantities-decimal.sql`](docs/migrations/2026-10-material-quantities-decimal.sql).
 La migración normaliza nulos y convierte sin borrar filas.
+
+## Migración de seriales de maquinaria
+
+La unicidad vigente es `(project_id, license_plate)`. Para retirar el índice único global de una base
+existente y crear la restricción compuesta sin borrar datos, revisar y ejecutar después de un respaldo
+[`docs/migrations/2026-10-machinery-serial-per-project.sql`](docs/migrations/2026-10-machinery-serial-per-project.sql).
 
 ## Decisión de registro público
 

@@ -4,7 +4,6 @@ import com.acme.arquitech.platform.iam.interfaces.rest.resources.*;
 import com.acme.arquitech.platform.iam.interfaces.rest.transform.UserResourceFromEntityAssembler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -16,7 +15,6 @@ import java.util.List;
 @RequiredArgsConstructor
 public class UsersController {
     private final UserQueryService queryService;
-    private final UserCommandService commandService;
 
     @GetMapping
     @PreAuthorize("hasAuthority('SUPERVISOR')")
@@ -31,9 +29,4 @@ public class UsersController {
         return UserResourceFromEntityAssembler.toResourceFromEntity(queryService.getById(id));
     }
 
-    @PutMapping("/{id}")
-    @Operation(summary = "Update your own name and phone")
-    public UserResource update(@PathVariable Long id, @Valid @RequestBody UpdateUserResource resource) {
-        return UserResourceFromEntityAssembler.toResourceFromEntity(commandService.updateProfile(id, resource.fullName(), resource.phone()));
-    }
 }

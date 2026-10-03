@@ -20,18 +20,10 @@ public class ProjectController {
     @GetMapping
     @Operation(summary = "List your accessible projects")
     public List<ProjectResource> getAll() { return queryService.findAll().stream().map(ProjectResource::from).toList(); }
-    @GetMapping("/{id}")
-    @Operation(summary = "Read an accessible project")
-    public ProjectResource get(@PathVariable Long id) { return ProjectResource.from(queryService.findById(id)); }
     @GetMapping("/supervisor/{userId}")
     @Operation(summary = "List your supervised projects")
     public List<ProjectResource> supervisor(@PathVariable Long userId) {
         return queryService.findByUserIdAndRole(userId, Role.SUPERVISOR).stream().map(ProjectResource::from).toList();
-    }
-    @GetMapping("/contractor/{userId}")
-    @Operation(summary = "List your contracted projects")
-    public List<ProjectResource> contractor(@PathVariable Long userId) {
-        return queryService.findByUserIdAndRole(userId, Role.CONTRACTOR).stream().map(ProjectResource::from).toList();
     }
     @PostMapping
     @Operation(summary = "Create a project as its supervisor")

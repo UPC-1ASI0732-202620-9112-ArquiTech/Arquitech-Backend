@@ -22,9 +22,6 @@ public class TaskController {
     public List<TaskResource> all(@RequestParam(required = false) Long projectId) {
         return queryService.findAll(projectId).stream().map(TaskResource::from).toList();
     }
-    @GetMapping("/{id}")
-    @Operation(summary = "Read tasks by ID")
-    public TaskResource get(@PathVariable Long id) { return TaskResource.from(queryService.findById(id)); }
     @PostMapping
     @Operation(summary = "Create tasks in a supervised project")
     public ResponseEntity<TaskResource> create(@Valid @RequestBody CreateTaskResource resource) {

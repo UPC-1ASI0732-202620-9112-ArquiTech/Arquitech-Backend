@@ -4,6 +4,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.*;
 public interface MachineryRepository extends JpaRepository<Machinery, Long> {
     List<Machinery> findByProjectIdIn(Collection<Long> projectIds);
-    boolean existsBySerialNumber(String serialNumber);
-    boolean existsBySerialNumberAndIdNot(String serialNumber, Long id);
+    boolean existsByProjectIdAndSerialNumber(Long projectId, String serialNumber);
+    boolean existsByProjectIdAndSerialNumberAndIdNot(Long projectId, String serialNumber, Long id);
 }

@@ -40,7 +40,8 @@ public class Task extends AuditableAbstractAggregateRoot<Task> {
                        TaskStatus status, OffsetDateTime now) {
         if (!worker.getProject().getId().equals(project.getId()))
             throw ApiException.invalid("VALIDATION_ERROR", "Worker must belong to the task project");
-        if (status == TaskStatus.DONE) throw ApiException.invalid("VALIDATION_ERROR", "Use COMPLETED");
+        // Keep deserializing the legacy enum value so clients receive a controlled 400 response.
+        if ("DONE".equals(status.name())) throw ApiException.invalid("VALIDATION_ERROR", "Use COMPLETED");
         if (status == TaskStatus.COMPLETED) {
             if (this.status == null || this.status.canonical() != TaskStatus.COMPLETED) completedAt = now;
         } else completedAt = null;

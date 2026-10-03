@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
@@ -26,7 +27,7 @@ public class MaterialController {
     @Operation(summary = "Create material and initial entry")
     public ResponseEntity<MaterialResource> create(@Valid @RequestBody CreateMaterialResource r) {
         var result = MaterialResource.from(commandService.createMaterial(r.toCommand()));
-        return ResponseEntity.created(java.net.URI.create("/api/v1/materials/" + result.id())).body(result);
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
     @PutMapping("/{id}")
     @Operation(summary = "Update descriptive material fields")

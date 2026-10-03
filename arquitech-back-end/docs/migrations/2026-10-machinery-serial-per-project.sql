@@ -14,6 +14,21 @@ CREATE PROCEDURE migrate_machinery_serial_scope()
 BEGIN
     DECLARE old_index VARCHAR(64) DEFAULT NULL;
     DECLARE composite_exists INT DEFAULT 0;
+    DECLARE duplicate_pairs BIGINT DEFAULT 0;
+
+    SELECT COUNT(*)
+      INTO duplicate_pairs
+      FROM (
+          SELECT project_id, license_plate
+            FROM machineries
+           GROUP BY project_id, license_plate
+          HAVING COUNT(*) > 1
+      ) AS duplicated_project_serials;
+
+    IF duplicate_pairs > 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Machinery migration aborted: resolve duplicate project/serial pairs first';
+    END IF;
 
     -- Remove any single-column UNIQUE index left by the former unique=true mapping.
     SELECT MIN(single_column_indexes.index_name)

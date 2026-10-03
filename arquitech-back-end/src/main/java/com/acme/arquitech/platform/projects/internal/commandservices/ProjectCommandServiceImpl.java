@@ -3,7 +3,6 @@ import com.acme.arquitech.platform.iam.application.internal.authorization.Curren
 import com.acme.arquitech.platform.iam.domain.model.valueobjects.Role;
 import com.acme.arquitech.platform.iam.infrastructure.persistence.jpa.repositories.UserRepository;
 import com.acme.arquitech.platform.projects.domain.model.aggregates.Project;
-import com.acme.arquitech.platform.projects.domain.model.valueobjects.ProjectStatus;
 import com.acme.arquitech.platform.projects.domain.services.ProjectCommandService;
 import com.acme.arquitech.platform.projects.infrastructure.persistence.jpa.repositories.ProjectRepository;
 import com.acme.arquitech.platform.projects.domain.model.commands.CreateProjectCommand;
@@ -28,7 +27,8 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
         var contractor = userRepository.findById(r.contractorId())
                 .filter(user -> user.getRole() == Role.CONTRACTOR)
                 .orElseThrow(() -> ApiException.invalid("INVALID_CONTRACTOR", "A valid contractor is required"));
-        if (r.status() == ProjectStatus.PAUSED) throw ApiException.invalid("VALIDATION_ERROR", "Use SUSPENDED");
+        // Keep deserializing the legacy enum value so clients receive a controlled 400 response.
+        if ("PAUSED".equals(r.status().name())) throw ApiException.invalid("VALIDATION_ERROR", "Use SUSPENDED");
         return projectRepository.save(new Project(r.name(), r.location(), r.startDate(), r.endDate(), r.budget(),
                 r.status(), r.progress(), supervisor, contractor, r.imageUrl()));
     }

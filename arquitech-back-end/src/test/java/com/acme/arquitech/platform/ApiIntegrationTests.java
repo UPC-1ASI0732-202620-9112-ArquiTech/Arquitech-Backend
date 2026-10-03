@@ -1,7 +1,13 @@
 package com.acme.arquitech.platform;
 
+import com.acme.arquitech.platform.iam.domain.model.valueobjects.Role;
+import com.acme.arquitech.platform.iam.interfaces.rest.resources.AuthenticatedUserResource;
+import com.acme.arquitech.platform.iam.interfaces.rest.resources.SignInResource;
+import com.acme.arquitech.platform.iam.interfaces.rest.resources.SignUpResource;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -10,6 +16,12 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Date;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,6 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ApiIntegrationTests {
     private static final String API = "/api/v1";
     private static final String PASSWORD = "SecurePass123!";
+    private static final String TEST_JWT_SECRET = "ArquiTechIntegrationTestSecretAtLeastThirtyTwoBytesLong";
     private static final AtomicInteger SEQUENCE = new AtomicInteger();
 
     @Autowired MockMvc mvc;
@@ -57,11 +70,26 @@ class ApiIntegrationTests {
                 .andReturn();
         String token = body(signIn).get("token").asText();
         assertThat(token).isNotBlank();
+        assertThat(new SignInResource(email, PASSWORD).toString()).doesNotContain(PASSWORD).contains("[REDACTED]");
+        assertThat(new SignUpResource("Auth Supervisor", email, PASSWORD, Role.SUPERVISOR, null, null).toString())
+                .doesNotContain(PASSWORD).contains("[REDACTED]");
+        assertThat(new AuthenticatedUserResource(id, "Auth Supervisor", email, Role.SUPERVISOR, token).toString())
+                .doesNotContain(token).contains("[REDACTED]");
 
         mvc.perform(get(API + "/projects"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
         mvc.perform(get(API + "/projects").header("Authorization", "Bearer invalid.jwt.token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+        Instant yesterday = Instant.now().minus(1, ChronoUnit.DAYS);
+        String expiredToken = Jwts.builder()
+                .subject(email)
+                .issuedAt(Date.from(yesterday.minus(1, ChronoUnit.DAYS)))
+                .expiration(Date.from(yesterday))
+                .signWith(Keys.hmacShaKeyFor(TEST_JWT_SECRET.getBytes(StandardCharsets.UTF_8)))
+                .compact();
+        mvc.perform(get(API + "/projects").header("Authorization", "Bearer " + expiredToken))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
         mvc.perform(get(API + "/users/{id}", id).header("Authorization", "Bearer " + token))
@@ -76,13 +104,50 @@ class ApiIntegrationTests {
                 .andExpect(jsonPath("$.components.securitySchemes.bearerAuth").exists())
                 .andReturn();
         JsonNode paths = body(docs).get("paths");
-        int operations = 0;
-        for (JsonNode path : paths) {
+        Set<String> actualOperations = new TreeSet<>();
+        var pathNames = paths.fieldNames();
+        while (pathNames.hasNext()) {
+            String pathName = pathNames.next();
+            JsonNode path = paths.get(pathName);
             for (String method : new String[]{"get", "post", "put", "delete", "patch"}) {
-                if (path.has(method)) operations++;
+                if (path.has(method)) actualOperations.add(method.toUpperCase() + " " + pathName);
             }
         }
-        assertThat(operations).isEqualTo(32);
+        assertThat(actualOperations).containsExactlyInAnyOrderElementsOf(Set.of(
+                "POST " + API + "/authentication/sign-in",
+                "POST " + API + "/authentication/sign-up",
+                "GET " + API + "/users",
+                "GET " + API + "/users/{id}",
+                "GET " + API + "/projects",
+                "GET " + API + "/projects/supervisor/{userId}",
+                "POST " + API + "/projects",
+                "GET " + API + "/materials/project/{projectId}",
+                "POST " + API + "/materials",
+                "PUT " + API + "/materials/{id}",
+                "DELETE " + API + "/materials/{id}",
+                "POST " + API + "/materials/{id}/entry",
+                "POST " + API + "/materials/{id}/use",
+                "GET " + API + "/materials/project/{projectId}/history",
+                "GET " + API + "/machinery",
+                "GET " + API + "/machinery/{id}",
+                "POST " + API + "/machinery",
+                "PUT " + API + "/machinery/{id}",
+                "DELETE " + API + "/machinery/{id}",
+                "GET " + API + "/workers",
+                "GET " + API + "/workers/{id}",
+                "POST " + API + "/workers",
+                "PUT " + API + "/workers/{id}",
+                "DELETE " + API + "/workers/{id}",
+                "GET " + API + "/tasks",
+                "POST " + API + "/tasks",
+                "PUT " + API + "/tasks/{id}",
+                "DELETE " + API + "/tasks/{id}",
+                "GET " + API + "/incidents/project/{projectId}",
+                "POST " + API + "/incidents",
+                "PUT " + API + "/incidents/{id}",
+                "DELETE " + API + "/incidents/{id}"
+        ));
+        assertThat(actualOperations).hasSize(32);
 
         assertMissing(paths, API + "/projects/{id}", "get");
         assertMissing(paths, API + "/projects/contractor/{userId}", "get");
@@ -108,6 +173,19 @@ class ApiIntegrationTests {
         Account otherContractor = account("other-contractor", "CONTRACTOR");
         long projectId = createProject(supervisor, contractor.id(), "Scoped project");
         long foreignProjectId = createProject(otherSupervisor, otherContractor.id(), "Foreign project");
+
+        mvc.perform(get(API + "/users/{id}", contractor.id())
+                        .header("Authorization", bearer(contractor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(contractor.id()));
+        mvc.perform(get(API + "/users/{id}", otherContractor.id())
+                        .header("Authorization", bearer(contractor)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mvc.perform(get(API + "/users/{id}", otherContractor.id())
+                        .header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(otherContractor.id()));
 
         mvc.perform(get(API + "/projects/supervisor/{id}", supervisor.id())
                         .header("Authorization", bearer(supervisor)))
@@ -154,6 +232,7 @@ class ApiIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(materialJson(projectId, "Cement", "1.25", "2026-10-02T17:00:00.000Z")))
                 .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Location"))
                 .andExpect(jsonPath("$.quantity").value(1.25))
                 .andExpect(jsonPath("$.stock").value(1.25))
                 .andExpect(jsonPath("$.date").value("2026-10-02"))
@@ -165,6 +244,7 @@ class ApiIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(materialJson(secondProjectId, "Sand", "0.01", "2026-10-02")))
                 .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Location"))
                 .andExpect(jsonPath("$.date").value("2026-10-02"))
                 .andReturn();
         long dateOnlyMaterialId = body(dateOnlyMaterial).get("id").asLong();
@@ -216,6 +296,11 @@ class ApiIntegrationTests {
                         .content(machineryJson(projectId, serial, "Excavator")))
                 .andExpect(status().isCreated()).andReturn();
         long firstMachineId = body(firstMachine).get("id").asLong();
+        String firstMachineLocation = firstMachine.getResponse().getHeader("Location");
+        assertThat(firstMachineLocation).isEqualTo(API + "/machinery/" + firstMachineId);
+        mvc.perform(get(firstMachineLocation).header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(firstMachineId));
         mvc.perform(post(API + "/machinery").header("Authorization", bearer(supervisor))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(machineryJson(projectId, serial, "Duplicate excavator")))
@@ -226,6 +311,20 @@ class ApiIntegrationTests {
                         .content(machineryJson(secondProjectId, serial, "Crane")))
                 .andExpect(status().isCreated()).andReturn();
         long secondMachineId = body(secondMachine).get("id").asLong();
+        assertThat(secondMachine.getResponse().getHeader("Location"))
+                .isEqualTo(API + "/machinery/" + secondMachineId);
+
+        MvcResult thirdMachine = mvc.perform(post(API + "/machinery").header("Authorization", bearer(supervisor))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(machineryJson(projectId, "PROJECT-002", "Loader")))
+                .andExpect(status().isCreated()).andReturn();
+        long thirdMachineId = body(thirdMachine).get("id").asLong();
+        mvc.perform(put(API + "/machinery/{id}", thirdMachineId)
+                        .header("Authorization", bearer(supervisor))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(machineryJson(projectId, serial, "Conflicting loader")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATED_SERIAL_NUMBER"));
 
         mvc.perform(get(API + "/machinery/{id}", firstMachineId).header("Authorization", bearer(supervisor)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.projectId").value(projectId));
@@ -237,6 +336,8 @@ class ApiIntegrationTests {
         mvc.perform(delete(API + "/machinery/{id}", firstMachineId).header("Authorization", bearer(supervisor)))
                 .andExpect(status().isNoContent());
         mvc.perform(delete(API + "/machinery/{id}", secondMachineId).header("Authorization", bearer(supervisor)))
+                .andExpect(status().isNoContent());
+        mvc.perform(delete(API + "/machinery/{id}", thirdMachineId).header("Authorization", bearer(supervisor)))
                 .andExpect(status().isNoContent());
 
         mvc.perform(delete(API + "/materials/{id}", materialId).header("Authorization", bearer(supervisor)))
@@ -278,6 +379,7 @@ class ApiIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(taskJson(projectId, workerId, "PENDING")))
                 .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Location"))
                 .andExpect(jsonPath("$.completedAt").doesNotExist()).andReturn();
         long taskId = body(task).get("id").asLong();
         mvc.perform(get(API + "/tasks").param("projectId", String.valueOf(projectId))
@@ -306,6 +408,7 @@ class ApiIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(incidentJson(projectId, "OPEN", contractor.id())))
                 .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Location"))
                 .andExpect(jsonPath("$.reportedByUserId").value(supervisor.id()))
                 .andExpect(jsonPath("$.resolvedAt").doesNotExist()).andReturn();
         long incidentId = body(incident).get("id").asLong();
@@ -352,18 +455,26 @@ class ApiIntegrationTests {
 
     private long createProject(Account supervisor, long contractorId, String name) throws Exception {
         MvcResult result = mvc.perform(post(API + "/projects").header("Authorization", bearer(supervisor))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(projectJson(supervisor.id(), contractorId, name)))
-                .andExpect(status().isCreated()).andReturn();
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(projectJson(supervisor.id(), contractorId, name)))
+                .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Location"))
+                .andReturn();
         return body(result).get("id").asLong();
     }
 
     private long createWorker(Account supervisor, long projectId, String name) throws Exception {
         MvcResult result = mvc.perform(post(API + "/workers").header("Authorization", bearer(supervisor))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(workerJson(projectId, name, "ACTIVE")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(workerJson(projectId, name, "ACTIVE")))
                 .andExpect(status().isCreated()).andReturn();
-        return body(result).get("id").asLong();
+        long id = body(result).get("id").asLong();
+        String location = result.getResponse().getHeader("Location");
+        assertThat(location).isEqualTo(API + "/workers/" + id);
+        mvc.perform(get(location).header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id));
+        return id;
     }
 
     private JsonNode body(MvcResult result) throws Exception {

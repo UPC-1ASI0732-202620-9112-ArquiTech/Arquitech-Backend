@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
@@ -26,7 +27,7 @@ public class TaskController {
     @Operation(summary = "Create tasks in a supervised project")
     public ResponseEntity<TaskResource> create(@Valid @RequestBody CreateTaskResource resource) {
         var result = TaskResource.from(commandService.create(resource.toCommand()));
-        return ResponseEntity.created(java.net.URI.create("/api/v1/tasks/" + result.id())).body(result);
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
     @PutMapping("/{id}")
     @Operation(summary = "Update tasks")

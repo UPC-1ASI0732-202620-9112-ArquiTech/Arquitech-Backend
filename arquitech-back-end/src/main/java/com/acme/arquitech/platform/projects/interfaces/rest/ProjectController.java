@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
@@ -29,6 +30,6 @@ public class ProjectController {
     @Operation(summary = "Create a project as its supervisor")
     public ResponseEntity<ProjectResource> create(@Valid @RequestBody CreateProjectResource resource) {
         var result = ProjectResource.from(commandService.create(resource.toCommand()));
-        return ResponseEntity.created(java.net.URI.create("/api/v1/projects/" + result.id())).body(result);
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
 }

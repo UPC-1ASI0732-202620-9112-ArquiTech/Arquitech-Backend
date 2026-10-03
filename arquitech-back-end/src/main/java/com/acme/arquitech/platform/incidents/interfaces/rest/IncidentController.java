@@ -26,7 +26,7 @@ public class IncidentController {
     @Operation(summary = "Report an incident as the authenticated supervisor")
     public ResponseEntity<IncidentResource> create(@Valid @RequestBody CreateIncidentResource r) {
         var result = IncidentResource.from(commandService.create(r.toCommand()));
-        return ResponseEntity.created(java.net.URI.create("/api/v1/incidents/" + result.id())).body(result);
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
     @PutMapping("/{id}")
     @Operation(summary = "Update an incident and its resolution status")

@@ -20,6 +20,9 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final CurrentUserService currentUser;
+    private final ProjectDeletionService deletion;
+    @PreAuthorize("hasAuthority('SUPERVISOR')")
+    public void delete(Long id) { deletion.delete(id); }
     @PreAuthorize("hasAuthority('SUPERVISOR')")
     public Project create(CreateProjectCommand r) {
         var supervisor = currentUser.supervisor();

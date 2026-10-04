@@ -38,6 +38,14 @@ class ApiIntegrationTests {
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
+    @Autowired com.acme.arquitech.platform.attendance.infrastructure.persistence.jpa.repositories.AttendanceRepository attendanceRepository;
+    @Autowired com.acme.arquitech.platform.tasks.infrastructure.persistence.jpa.repositories.TaskRepository taskRepository;
+    @Autowired com.acme.arquitech.platform.workers.infrastructure.persistence.jpa.repositories.WorkerRepository workerRepository;
+    @Autowired com.acme.arquitech.platform.materials.infrastructure.persistence.jpa.repositories.MaterialRepository materialRepository;
+    @Autowired com.acme.arquitech.platform.materials.infrastructure.persistence.jpa.repositories.MaterialMovementRepository movementRepository;
+    @Autowired com.acme.arquitech.platform.incidents.repositories.IncidentRepository incidentRepository;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    com.acme.arquitech.platform.machinery.infrastructure.persistence.jpa.repositories.MachineryRepository machineryRepository;
 
     @Test
     void authenticationUsersAndOpenApiExposeTheFinalContract() throws Exception {
@@ -121,6 +129,11 @@ class ApiIntegrationTests {
                 "GET " + API + "/projects",
                 "GET " + API + "/projects/supervisor/{userId}",
                 "POST " + API + "/projects",
+                "DELETE " + API + "/projects/{id}",
+                "GET " + API + "/attendance",
+                "POST " + API + "/attendance",
+                "PUT " + API + "/attendance/{id}",
+                "DELETE " + API + "/attendance/{id}",
                 "GET " + API + "/materials/project/{projectId}",
                 "POST " + API + "/materials",
                 "PUT " + API + "/materials/{id}",
@@ -147,7 +160,7 @@ class ApiIntegrationTests {
                 "PUT " + API + "/incidents/{id}",
                 "DELETE " + API + "/incidents/{id}"
         ));
-        assertThat(actualOperations).hasSize(32);
+        assertThat(actualOperations).hasSize(37);
 
         assertMissing(paths, API + "/projects/{id}", "get");
         assertMissing(paths, API + "/projects/contractor/{userId}", "get");
@@ -427,6 +440,170 @@ class ApiIntegrationTests {
         mvc.perform(get(API + "/incidents/project/{id}", projectId)
                         .header("Authorization", bearer(supervisor)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+    }
+
+
+    @Test
+    void attendanceCrudValidationAndAuthorization() throws Exception {
+        var supervisor = account("attendance-supervisor", "SUPERVISOR");
+        var contractor = account("attendance-contractor", "CONTRACTOR");
+        var outsider = account("attendance-outsider", "SUPERVISOR");
+        long project = createProject(supervisor, contractor.id(), "Attendance project");
+        long worker = createWorker(supervisor, project, "Attendance worker");
+        long secondWorker = createWorker(supervisor, project, "Second worker");
+        long foreignProject = createProject(supervisor, contractor.id(), "Other attendance project");
+        long foreignWorker = createWorker(supervisor, foreignProject, "Foreign worker");
+        String payload = attendanceJson(project, worker, "2026-10-03", "PRESENT");
+        mvc.perform(get(API + "/attendance").param("projectId", "" + project))
+                .andExpect(status().isUnauthorized());
+        for (String method : new String[]{"POST", "PUT", "DELETE"}) {
+            var request = switch (method) {
+                case "POST" -> post(API + "/attendance");
+                case "PUT" -> put(API + "/attendance/1");
+                default -> delete(API + "/attendance/1");
+            };
+            mvc.perform(request.header("Authorization", bearer(contractor)).contentType(MediaType.APPLICATION_JSON).content(payload))
+                    .andExpect(status().isForbidden());
+        }
+        mvc.perform(post(API + "/attendance").header("Authorization", bearer(outsider)).contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andExpect(status().isForbidden());
+        var created = mvc.perform(post(API + "/attendance").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(payload)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.workerName").value("Attendance worker"))
+                .andExpect(jsonPath("$.registeredByUserId").value(supervisor.id()))
+                .andExpect(jsonPath("$.createdAt").isNotEmpty()).andReturn();
+        long id = body(created).get("id").asLong();
+        mvc.perform(post(API + "/attendance").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DUPLICATE_ATTENDANCE"));
+        mvc.perform(post(API + "/attendance").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(attendanceJson(project, foreignWorker, "2026-10-03", "PRESENT")))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post(API + "/attendance").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(attendanceJson(project, worker, "2025-01-01", "PRESENT")))
+                .andExpect(status().isBadRequest());
+        for (String state : new String[]{"ABSENT", "LATE", "EXCUSED"}) {
+            mvc.perform(put(API + "/attendance/{id}", id).header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                            .content(attendanceUpdate(worker, "2026-10-03", state, null, null)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.status").value(state));
+        }
+        mvc.perform(put(API + "/attendance/{id}", id).header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(attendanceUpdate(worker, "2026-10-03", "LATE", "2026-10-03T08:30:00-05:00", "2026-10-03T17:00:00-05:00")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.checkInAt").value("2026-10-03T13:30:00Z"));
+        for (String invalid : new String[]{attendanceUpdate(worker, "2026-10-03", "ABSENT", "2026-10-03T08:00:00Z", null),
+                attendanceUpdate(worker, "2026-10-03", "PRESENT", null, "2026-10-03T08:00:00Z"),
+                attendanceUpdate(worker, "2026-10-03", "PRESENT", "2026-10-03T10:00:00Z", "2026-10-03T08:00:00Z"),
+                attendanceUpdate(worker, "2026-10-03", "INVALID", null, null),
+                attendanceUpdate(worker, "2026-10-03", "PRESENT", null, null).replace("\"notes\":\"Site\"", "\"registeredByUserId\":999")}) {
+            mvc.perform(put(API + "/attendance/{id}", id).header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON).content(invalid))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+        mvc.perform(post(API + "/attendance").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(attendanceJson(project, secondWorker, "2026-10-03", "PRESENT"))).andExpect(status().isCreated());
+        mvc.perform(put(API + "/attendance/{id}", id).header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(attendanceUpdate(secondWorker, "2026-10-03", "PRESENT", null, null)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DUPLICATE_ATTENDANCE"));
+        mvc.perform(get(API + "/attendance").param("projectId", "" + project).param("date", "2026-10-03").header("Authorization", bearer(contractor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2));
+        mvc.perform(get(API + "/attendance").param("projectId", "" + project).param("date", "2026-10-02").header("Authorization", bearer(contractor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(get(API + "/attendance").param("projectId", "" + project).header("Authorization", bearer(outsider)))
+                .andExpect(status().isForbidden());
+        mvc.perform(put(API + "/attendance/{id}", id).header("Authorization", bearer(outsider)).contentType(MediaType.APPLICATION_JSON)
+                        .content(attendanceUpdate(worker, "2026-10-03", "PRESENT", null, null))).andExpect(status().isForbidden());
+        mvc.perform(delete(API + "/attendance/{id}", id).header("Authorization", bearer(outsider))).andExpect(status().isForbidden());
+        mvc.perform(delete(API + "/workers/{id}", worker).header("Authorization", bearer(supervisor)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("WORKER_HAS_ATTENDANCE"));
+        mvc.perform(put(API + "/workers/{id}", worker).header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(workerJson(project, "Inactive worker", "INACTIVE"))).andExpect(status().isOk());
+        mvc.perform(post(API + "/attendance").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(attendanceJson(project, worker, "2026-10-04", "PRESENT"))).andExpect(status().isBadRequest());
+        mvc.perform(put(API + "/attendance/{id}", id).header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(attendanceUpdate(worker, "2026-10-03", "EXCUSED", null, null))).andExpect(status().isOk());
+        mvc.perform(delete(API + "/attendance/{id}", id).header("Authorization", bearer(supervisor))).andExpect(status().isNoContent());
+        mvc.perform(delete(API + "/attendance/{id}", id).header("Authorization", bearer(supervisor)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("ATTENDANCE_NOT_FOUND"));
+    }
+
+    @Test
+    void projectDeletionRemovesOnlyItsChildrenAndRequiresOwningSupervisor() throws Exception {
+        var supervisor = account("delete-supervisor", "SUPERVISOR");
+        var contractor = account("delete-contractor", "CONTRACTOR");
+        var outsider = account("delete-outsider", "SUPERVISOR");
+        long project = createProject(supervisor, contractor.id(), "Delete project");
+        long keepProject = createProject(supervisor, contractor.id(), "Keep project");
+        long worker = createWorker(supervisor, project, "Delete worker");
+        long keptWorker = createWorker(supervisor, keepProject, "Keep worker");
+        mvc.perform(post(API + "/attendance").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(attendanceJson(project, worker, "2026-10-03", "PRESENT"))).andExpect(status().isCreated());
+        mvc.perform(post(API + "/tasks").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(taskJson(project, worker, "PENDING"))).andExpect(status().isCreated());
+        mvc.perform(post(API + "/materials").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(materialJson(project, "Delete cement", "10", "2026-10-03"))).andExpect(status().isCreated());
+        mvc.perform(post(API + "/machinery").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(machineryJson(project, "DELETE-01", "Delete crane"))).andExpect(status().isCreated());
+        mvc.perform(post(API + "/incidents").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(incidentJson(project, "OPEN", supervisor.id()))).andExpect(status().isCreated());
+        mvc.perform(delete(API + "/projects/{id}", project)).andExpect(status().isUnauthorized());
+        mvc.perform(delete(API + "/projects/{id}", project).header("Authorization", bearer(contractor))).andExpect(status().isForbidden());
+        mvc.perform(delete(API + "/projects/{id}", project).header("Authorization", bearer(outsider))).andExpect(status().isForbidden());
+        mvc.perform(delete(API + "/projects/{id}", project).header("Authorization", bearer(supervisor))).andExpect(status().isNoContent());
+        mvc.perform(get(API + "/projects").header("Authorization", bearer(contractor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].id").value(keepProject));
+        mvc.perform(get(API + "/workers").header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].id").value(keptWorker));
+        for (String route : new String[]{"/tasks", "/machinery"}) {
+            mvc.perform(get(API + route).header("Authorization", bearer(supervisor)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        }
+        mvc.perform(get(API + "/attendance").param("projectId", "" + keepProject).header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(get(API + "/materials/project/{id}/history", keepProject).header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(get(API + "/incidents/project/{id}", keepProject).header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(delete(API + "/projects/{id}", project).header("Authorization", bearer(supervisor)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("PROJECT_NOT_FOUND"));
+        mvc.perform(get(API + "/users/{id}", contractor.id()).header("Authorization", bearer(supervisor))).andExpect(status().isOk());
+        assertThat(attendanceRepository.findByProjectIdOrderByAttendanceDateDescIdDesc(project)).isEmpty();
+        assertThat(taskRepository.findByProjectIdIn(java.util.List.of(project))).isEmpty();
+        assertThat(workerRepository.findByProjectIdIn(java.util.List.of(project))).isEmpty();
+        assertThat(materialRepository.findByProjectIdIn(java.util.List.of(project))).isEmpty();
+        assertThat(movementRepository.findByMaterialProjectIdOrderByOccurredAtAscIdAsc(project)).isEmpty();
+        assertThat(incidentRepository.findByProjectIdIn(java.util.List.of(project))).isEmpty();
+        assertThat(machineryRepository.findByProjectIdIn(java.util.List.of(project))).isEmpty();
+    }
+
+
+    @Test
+    void projectDeletionRollsBackEveryChildWhenOneStepFails() throws Exception {
+        var supervisor = account("rollback-supervisor", "SUPERVISOR");
+        var contractor = account("rollback-contractor", "CONTRACTOR");
+        long project = createProject(supervisor, contractor.id(), "Rollback project");
+        long worker = createWorker(supervisor, project, "Rollback worker");
+        mvc.perform(post(API + "/attendance").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(attendanceJson(project, worker, "2026-10-03", "PRESENT"))).andExpect(status().isCreated());
+        mvc.perform(post(API + "/tasks").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(taskJson(project, worker, "PENDING"))).andExpect(status().isCreated());
+        mvc.perform(post(API + "/materials").header("Authorization", bearer(supervisor)).contentType(MediaType.APPLICATION_JSON)
+                        .content(materialJson(project, "Rollback cement", "10", "2026-10-03"))).andExpect(status().isCreated());
+        org.mockito.Mockito.doThrow(new IllegalStateException("Test-only failure")).when(machineryRepository).deleteAllByProjectId(project);
+        mvc.perform(delete(API + "/projects/{id}", project).header("Authorization", bearer(supervisor)))
+                .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
+        mvc.perform(get(API + "/projects").header("Authorization", bearer(contractor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+        assertThat(attendanceRepository.findByProjectIdOrderByAttendanceDateDescIdDesc(project)).hasSize(1);
+        assertThat(taskRepository.findByProjectIdIn(java.util.List.of(project))).hasSize(1);
+        assertThat(workerRepository.findByProjectIdIn(java.util.List.of(project))).hasSize(1);
+        assertThat(materialRepository.findByProjectIdIn(java.util.List.of(project))).hasSize(1);
+        assertThat(movementRepository.findByMaterialProjectIdOrderByOccurredAtAscIdAsc(project)).hasSize(1);
+    }
+    private String attendanceJson(long project, long worker, String date, String status) {
+        return "{\"projectId\":" + project + "," + attendanceUpdate(worker, date, status, null, null).substring(1);
+    }
+    private String attendanceUpdate(long worker, String date, String status, String checkIn, String checkOut) {
+        return """
+                {"workerId":%d,"attendanceDate":"%s","status":"%s","checkInAt":%s,"checkOutAt":%s,"notes":"Site"}
+                """.formatted(worker, date, status, checkIn == null ? "null" : "\"" + checkIn + "\"", checkOut == null ? "null" : "\"" + checkOut + "\"");
     }
 
     private void assertMissing(JsonNode paths, String path, String method) {

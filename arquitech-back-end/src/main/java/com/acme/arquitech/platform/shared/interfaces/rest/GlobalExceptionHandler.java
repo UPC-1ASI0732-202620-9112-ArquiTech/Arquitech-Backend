@@ -52,6 +52,10 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> conflict(DataIntegrityViolationException ex, HttpServletRequest request) {
+        // A database unique constraint is the final authority for concurrent registrations.
+        String detail = String.valueOf(ex.getMostSpecificCause().getMessage()).toLowerCase(java.util.Locale.ROOT);
+        if (detail.contains("uk_attendance_worker_date"))
+            return response(HttpStatus.CONFLICT, "DUPLICATE_ATTENDANCE", "Attendance already exists for this worker and date", request);
         return response(HttpStatus.CONFLICT, "DATA_CONFLICT", "The operation conflicts with existing data", request);
     }
 

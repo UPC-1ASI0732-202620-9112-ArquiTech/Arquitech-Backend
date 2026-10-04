@@ -61,8 +61,8 @@ public class MaterialCommandServiceImpl implements MaterialService {
     }
 
     private Material writable(Long id) {
-        var material = materialRepository.findForUpdate(id).orElseThrow(() -> new MaterialNotFoundException(id));
-        access.requireWrite(material.getProjectId());
-        return material;
+        var projectId = materialRepository.findProjectIdById(id).orElseThrow(() -> new MaterialNotFoundException(id));
+        access.requireWrite(projectId);
+        return materialRepository.findForUpdate(id).orElseThrow(() -> new MaterialNotFoundException(id));
     }
 }

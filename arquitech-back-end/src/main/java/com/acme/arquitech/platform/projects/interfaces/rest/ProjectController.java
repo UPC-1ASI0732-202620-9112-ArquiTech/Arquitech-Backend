@@ -26,6 +26,12 @@ public class ProjectController {
     public List<ProjectResource> supervisor(@PathVariable Long userId) {
         return queryService.findByUserIdAndRole(userId, Role.SUPERVISOR).stream().map(ProjectResource::from).toList();
     }
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Delete your project and all its records")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        commandService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
     @PostMapping
     @Operation(summary = "Create a project as its supervisor")
     public ResponseEntity<ProjectResource> create(@Valid @RequestBody CreateProjectResource resource) {

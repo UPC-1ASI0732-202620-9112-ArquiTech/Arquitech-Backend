@@ -20,6 +20,7 @@ public class WorkerCommandServiceImpl implements WorkerService {
     private final WorkerRepository repository;
     private final TaskRepository tasks;
     private final ProjectAccessService access;
+    private final com.acme.arquitech.platform.attendance.infrastructure.persistence.jpa.repositories.AttendanceRepository attendance;
     public Worker create(CreateWorkerCommand r) {
         var project = access.requireWrite(r.projectId());
         return repository.save(new Worker(project, r.fullName(), r.role(), r.specialty(), r.hireDate(), r.status()));
@@ -34,6 +35,7 @@ public class WorkerCommandServiceImpl implements WorkerService {
     public void delete(Long id) {
         var worker = writable(id);
         if (tasks.existsByWorkerId(id)) throw ApiException.conflict("WORKER_HAS_TASKS", "Reassign or delete the worker's tasks first");
+        if (attendance.existsByWorkerId(id)) throw ApiException.conflict("WORKER_HAS_ATTENDANCE", "Delete attendance records first or mark the worker inactive");
         repository.delete(worker);
     }
     private Worker writable(Long id) {

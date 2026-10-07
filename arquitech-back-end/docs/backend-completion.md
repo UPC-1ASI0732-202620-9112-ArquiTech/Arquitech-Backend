@@ -1,5 +1,7 @@
 # Informe de finalización del backend ArquiTech
 
+> Informe histórico de la primera entrega. Para la ampliación actual en main (asistencia y eliminación de proyectos), consultar [project-deletion-attendance.md](project-deletion-attendance.md).
+
 ## Resultado y alcance
 
 Se refactorizó el backend existente en **feature/backend-completion**, creada desde **develop**, a su vez creada desde **main**.

@@ -28,8 +28,12 @@ public class ProjectAccessService {
     }
 
     public Project requireWrite(Long id) {
-        currentUser.supervisor();
-        return requireRead(id);
+        var user = currentUser.supervisor();
+        // All writes lock the parent first, including resources with legacy scalar projectId.
+        // This prevents creating orphan data while another transaction deletes the project.
+        var project = projects.findForUpdate(id).orElseThrow(() -> new ProjectNotFoundException(id));
+        if (!project.getSupervisor().getId().equals(user.getId())) throw new AccessDeniedException("Access denied");
+        return project;
     }
 
     public List<Long> accessibleProjectIds() {

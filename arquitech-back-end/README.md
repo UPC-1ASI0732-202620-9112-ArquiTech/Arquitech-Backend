@@ -94,7 +94,8 @@ Todas llevan el prefijo `/api/v1`.
 | --- | --- |
 | Authentication | POST `/authentication/sign-in`, POST `/authentication/sign-up` |
 | Users | GET `/users`, GET `/users/{id}` |
-| Projects | GET/POST `/projects`, GET `/projects/supervisor/{userId}` |
+| Projects | GET/POST `/projects`, GET `/projects/supervisor/{userId}`, DELETE `/projects/{id}` |
+| Attendance | GET/POST `/attendance`, PUT/DELETE `/attendance/{id}` |
 | Materials | POST `/materials`, PUT/DELETE `/materials/{id}`, GET `/materials/project/{projectId}` |
 | Material movements | POST `/materials/{id}/entry`, POST `/materials/{id}/use`, GET `/materials/project/{projectId}/history` |
 | Machinery | GET/POST `/machinery`, GET/PUT/DELETE `/machinery/{id}` |
@@ -190,3 +191,8 @@ existente y crear la restricción compuesta sin borrar datos, revisar y ejecutar
 Para conservar las demos actuales, `sign-up` todavía permite elegir `SUPERVISOR` o `CONTRACTOR`.
 Esto permite autoasignarse privilegios de supervisor y no es apropiado para un alta pública de producción.
 Antes de abrir el registro, debe reemplazarse por invitaciones/aprobación administrativa o fijar el rol público permitido.
+
+
+## Nuevas operaciones
+
+Asistencia diaria y eliminación transaccional de obras están documentadas en [docs/project-deletion-attendance.md](docs/project-deletion-attendance.md). Asistencia se filtra por projectId y fecha; Supervisor administra y Contractor consulta. El esquema nuevo se incorpora con Hibernate update o con la migración incluida.

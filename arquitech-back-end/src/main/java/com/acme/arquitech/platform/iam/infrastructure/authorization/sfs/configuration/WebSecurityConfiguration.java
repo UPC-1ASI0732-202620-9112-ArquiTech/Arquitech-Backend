@@ -47,11 +47,11 @@ public class WebSecurityConfiguration {
                 .requestMatchers(HttpMethod.POST, "/api/v1/authentication/sign-in", "/api/v1/authentication/sign-up").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/projects/**", "/api/v1/materials/**",
-                        "/api/v1/machinery/**", "/api/v1/workers/**", "/api/v1/tasks/**", "/api/v1/incidents/**").hasAuthority("SUPERVISOR")
+                        "/api/v1/machinery/**", "/api/v1/workers/**", "/api/v1/tasks/**", "/api/v1/incidents/**", "/api/v1/attendance/**").hasAuthority("SUPERVISOR")
                 .requestMatchers(HttpMethod.PUT, "/api/v1/projects/**", "/api/v1/materials/**",
-                        "/api/v1/machinery/**", "/api/v1/workers/**", "/api/v1/tasks/**", "/api/v1/incidents/**").hasAuthority("SUPERVISOR")
+                        "/api/v1/machinery/**", "/api/v1/workers/**", "/api/v1/tasks/**", "/api/v1/incidents/**", "/api/v1/attendance/**").hasAuthority("SUPERVISOR")
                 .requestMatchers(HttpMethod.DELETE, "/api/v1/projects/**", "/api/v1/materials/**",
-                        "/api/v1/machinery/**", "/api/v1/workers/**", "/api/v1/tasks/**", "/api/v1/incidents/**").hasAuthority("SUPERVISOR")
+                        "/api/v1/machinery/**", "/api/v1/workers/**", "/api/v1/tasks/**", "/api/v1/incidents/**", "/api/v1/attendance/**").hasAuthority("SUPERVISOR")
                 .anyRequest().authenticated());
         // Construct here so Spring Boot does not also register this filter outside the security chain.
         http.addFilterBefore(new BearerAuthorizationRequestFilter(tokens, users), UsernamePasswordAuthenticationFilter.class);

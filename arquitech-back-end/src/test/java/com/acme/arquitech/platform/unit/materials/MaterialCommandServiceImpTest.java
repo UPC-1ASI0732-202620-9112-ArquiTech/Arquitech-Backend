@@ -32,10 +32,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Unit tests for the business rule:
- * "A material usage cannot exceed the available stock" (HU02 / TS03).
- */
+
 @ExtendWith(MockitoExtension.class)
 class MaterialCommandServiceImplTest {
 
@@ -67,10 +64,16 @@ class MaterialCommandServiceImplTest {
         return new MaterialUsageCommand(new BigDecimal(quantity), OffsetDateTime.now(), "Test usage");
     }
 
+    // The service first looks up the material's project (to check access) and then loads the material
+    private void givenMaterialExists(Material existingMaterial) {
+        when(materialRepository.findProjectIdById(MATERIAL_ID)).thenReturn(Optional.of(PROJECT_ID));
+        when(materialRepository.findForUpdate(MATERIAL_ID)).thenReturn(Optional.of(existingMaterial));
+    }
+
     @Test
     @DisplayName("Usage lower than stock decreases the stock")
     void usageLowerThanStockDecreasesStock() {
-        when(materialRepository.findForUpdate(MATERIAL_ID)).thenReturn(Optional.of(material));
+        givenMaterialExists(material);
 
         materialCommandService.use(MATERIAL_ID, usageOf("10"));
 
@@ -81,7 +84,7 @@ class MaterialCommandServiceImplTest {
     @Test
     @DisplayName("Usage equal to stock leaves the stock at zero")
     void usageEqualToStockLeavesStockAtZero() {
-        when(materialRepository.findForUpdate(MATERIAL_ID)).thenReturn(Optional.of(material));
+        givenMaterialExists(material);
 
         materialCommandService.use(MATERIAL_ID, usageOf("40"));
 
@@ -91,7 +94,7 @@ class MaterialCommandServiceImplTest {
     @Test
     @DisplayName("Usage greater than stock throws InsufficientStockException")
     void usageGreaterThanStockThrowsException() {
-        when(materialRepository.findForUpdate(MATERIAL_ID)).thenReturn(Optional.of(material));
+        givenMaterialExists(material);
 
         assertThrows(InsufficientStockException.class,
                 () -> materialCommandService.use(MATERIAL_ID, usageOf("50")));
@@ -102,7 +105,7 @@ class MaterialCommandServiceImplTest {
     @Test
     @DisplayName("Usage greater than stock does not save any movement")
     void usageGreaterThanStockDoesNotSaveMovement() {
-        when(materialRepository.findForUpdate(MATERIAL_ID)).thenReturn(Optional.of(material));
+        givenMaterialExists(material);
 
         assertThrows(InsufficientStockException.class,
                 () -> materialCommandService.use(MATERIAL_ID, usageOf("50")));
@@ -113,7 +116,7 @@ class MaterialCommandServiceImplTest {
     @Test
     @DisplayName("Usage of zero units is rejected")
     void usageOfZeroIsRejected() {
-        when(materialRepository.findForUpdate(MATERIAL_ID)).thenReturn(Optional.of(material));
+        givenMaterialExists(material);
 
         assertThrows(InvalidMaterialDataException.class,
                 () -> materialCommandService.use(MATERIAL_ID, usageOf("0")));
@@ -124,7 +127,7 @@ class MaterialCommandServiceImplTest {
     @Test
     @DisplayName("Usage of a negative quantity is rejected")
     void negativeUsageIsRejected() {
-        when(materialRepository.findForUpdate(MATERIAL_ID)).thenReturn(Optional.of(material));
+        givenMaterialExists(material);
 
         assertThrows(InvalidMaterialDataException.class,
                 () -> materialCommandService.use(MATERIAL_ID, usageOf("-5")));
@@ -135,7 +138,7 @@ class MaterialCommandServiceImplTest {
     @Test
     @DisplayName("Usage of a material that does not exist throws MaterialNotFoundException")
     void usageOfUnknownMaterialThrowsNotFound() {
-        when(materialRepository.findForUpdate(99L)).thenReturn(Optional.empty());
+        when(materialRepository.findProjectIdById(99L)).thenReturn(Optional.empty());
 
         assertThrows(MaterialNotFoundException.class,
                 () -> materialCommandService.use(99L, usageOf("10")));
@@ -146,7 +149,7 @@ class MaterialCommandServiceImplTest {
     @Test
     @DisplayName("Usage just above the stock (40.0001) is rejected")
     void usageJustAboveStockIsRejected() {
-        when(materialRepository.findForUpdate(MATERIAL_ID)).thenReturn(Optional.of(material));
+        givenMaterialExists(material);
 
         assertThrows(InsufficientStockException.class,
                 () -> materialCommandService.use(MATERIAL_ID, usageOf("40.0001")));
@@ -159,7 +162,7 @@ class MaterialCommandServiceImplTest {
     void decimalUsageIsSubtractedCorrectly() {
         Material sand = new Material(PROJECT_ID, "Arena gruesa", "m3", new BigDecimal("10.5"), new BigDecimal("1"),
                 new BigDecimal("65.00"), "Agregados Lurin", "20601234561", LocalDate.of(2026, 10, 1));
-        when(materialRepository.findForUpdate(MATERIAL_ID)).thenReturn(Optional.of(sand));
+        givenMaterialExists(sand);
 
         materialCommandService.use(MATERIAL_ID, usageOf("0.25"));
 
@@ -169,7 +172,7 @@ class MaterialCommandServiceImplTest {
     @Test
     @DisplayName("Second usage is rejected when the first one already consumed most of the stock")
     void secondUsageIsRejectedWhenStockIsNotEnough() {
-        when(materialRepository.findForUpdate(MATERIAL_ID)).thenReturn(Optional.of(material));
+        givenMaterialExists(material);
 
         materialCommandService.use(MATERIAL_ID, usageOf("30"));
 
@@ -182,20 +185,21 @@ class MaterialCommandServiceImplTest {
     @Test
     @DisplayName("Usage is denied when the user has no access to the project")
     void usageIsDeniedWithoutProjectAccess() {
-        when(materialRepository.findForUpdate(MATERIAL_ID)).thenReturn(Optional.of(material));
+        when(materialRepository.findProjectIdById(MATERIAL_ID)).thenReturn(Optional.of(PROJECT_ID));
         when(projectAccessService.requireWrite(PROJECT_ID)).thenThrow(new AccessDeniedException("Access denied"));
 
         assertThrows(AccessDeniedException.class,
                 () -> materialCommandService.use(MATERIAL_ID, usageOf("10")));
 
         assertEquals(new BigDecimal("40"), material.getStock());
+        verify(materialRepository, never()).findForUpdate(any());
         verify(movementRepository, never()).save(any());
     }
 
     @Test
     @DisplayName("Project access is not checked when the material does not exist")
     void accessIsNotCheckedWhenMaterialDoesNotExist() {
-        when(materialRepository.findForUpdate(99L)).thenReturn(Optional.empty());
+        when(materialRepository.findProjectIdById(99L)).thenReturn(Optional.empty());
 
         assertThrows(MaterialNotFoundException.class,
                 () -> materialCommandService.use(99L, usageOf("10")));

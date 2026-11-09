@@ -1,0 +1,132 @@
+name: Continuous Monitoring
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: arquitech-continuous-monitoring
+  cancel-in-progress: false
+
+jobs:
+  availability:
+    name: Check public availability
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BACKEND_HEALTH_URL: ${{ vars.BACKEND_HEALTH_URL || 'https://arquitech-backend-production.up.railway.app/actuator/health' }}
+      WEB_URL: ${{ vars.WEB_URL || 'https://arquitech-frontendweb.echacaliazaminaya.workers.dev/' }}
+      LANDING_URL: ${{ vars.LANDING_URL || 'https://upc-1asi0732-202620-9112-arquitech.github.io/ArquiTech-LandingPage/' }}
+      REQUEST_TIMEOUT_MS: ${{ vars.MONITOR_TIMEOUT_MS || '10000' }}
+      MAX_ATTEMPTS: ${{ vars.MONITOR_MAX_ATTEMPTS || '3' }}
+      RETRY_DELAY_MS: ${{ vars.MONITOR_RETRY_DELAY_MS || '5000' }}
+      MONITOR_RESULT_FILE: ${{ runner.temp }}/monitor-results.json
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Test monitoring and incident logic
+        run: node --test .github/scripts/monitor-endpoints.test.mjs
+
+      - name: Check configured endpoints
+        id: monitor
+        continue-on-error: true
+        run: node .github/scripts/monitor-endpoints.mjs
+
+      - name: Open, suppress or recover availability incident
+        if: always() && steps.monitor.outcome != 'skipped'
+        uses: actions/github-script@v7
+        env:
+          MONITORING_FAILED: ${{ steps.monitor.outcome == 'failure' }}
+          RESULT_FILE: ${{ runner.temp }}/monitor-results.json
+        with:
+          script: |
+            const fs = require('fs');
+            const { pathToFileURL } = require('url');
+            const policyUrl = pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.github/scripts/incident-policy.mjs`).href;
+            const { decideIncidentAction } = await import(policyUrl);
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const label = 'availability-incident';
+            const title = '[Monitoring] ArquiTech availability incident';
+            const monitoringFailed = process.env.MONITORING_FAILED === 'true';
+            let result = { checkedAt: new Date().toISOString(), targets: [] };
+            if (fs.existsSync(process.env.RESULT_FILE)) {
+              result = JSON.parse(fs.readFileSync(process.env.RESULT_FILE, 'utf8'));
+            }
+
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: label,
+                color: 'B60205',
+                description: 'Technical availability incident detected by Continuous Monitoring',
+              });
+            }
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              labels: label,
+              per_page: 100,
+            });
+            const openIncidents = issues.filter((issue) => !issue.pull_request && issue.title === title);
+            const action = decideIncidentAction({
+              monitoringFailed,
+              hasOpenIncident: openIncidents.length > 0,
+            });
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const evidence = ['```json', JSON.stringify(result, null, 2), '```'].join('\n');
+
+            if (action === 'open') {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                labels: [label],
+                body: `The scheduled monitor exhausted its configured attempts.\n\nWorkflow: ${runUrl}\n\n${evidence}`,
+              });
+            } else if (action === 'suppress') {
+              core.info('An open availability incident already exists; duplicate notification suppressed.');
+            } else if (action === 'recover') {
+              for (const incident of openIncidents) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: incident.number,
+                  body: `Availability recovered at ${result.checkedAt}.\n\nWorkflow: ${runUrl}\n\n${evidence}`,
+                });
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: incident.number,
+                  state: 'closed',
+                  state_reason: 'completed',
+                });
+              }
+            } else {
+              core.info('All configured endpoints are available and no incident is open.');
+            }
+
+            await core.summary.addRaw(`Incident policy action: ${action}\n`).write();
+
+      - name: Fail workflow when availability check failed
+        if: steps.monitor.outcome == 'failure'
+        run: exit 1

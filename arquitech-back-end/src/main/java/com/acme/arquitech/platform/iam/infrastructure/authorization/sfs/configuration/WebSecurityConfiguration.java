@@ -45,6 +45,7 @@ public class WebSecurityConfiguration {
                 }))
             .authorizeHttpRequests(config -> config
                 .requestMatchers(HttpMethod.POST, "/api/v1/authentication/sign-in", "/api/v1/authentication/sign-up").permitAll()
+                .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/projects/**", "/api/v1/materials/**",
                         "/api/v1/machinery/**", "/api/v1/workers/**", "/api/v1/tasks/**", "/api/v1/incidents/**", "/api/v1/attendance/**").hasAuthority("SUPERVISOR")

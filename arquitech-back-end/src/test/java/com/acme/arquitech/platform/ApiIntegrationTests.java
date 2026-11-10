@@ -141,6 +141,7 @@ class ApiIntegrationTests {
                 "POST " + API + "/materials/{id}/entry",
                 "POST " + API + "/materials/{id}/use",
                 "POST " + API + "/materials/{id}/offline-movements",
+                "GET " + API + "/materials/offline-sync-capabilities",
                 "GET " + API + "/materials/project/{projectId}/history",
                 "GET " + API + "/machinery",
                 "GET " + API + "/machinery/{id}",
@@ -161,7 +162,7 @@ class ApiIntegrationTests {
                 "PUT " + API + "/incidents/{id}",
                 "DELETE " + API + "/incidents/{id}"
         ));
-        assertThat(actualOperations).hasSize(38);
+        assertThat(actualOperations).hasSize(39);
 
         assertMissing(paths, API + "/projects/{id}", "get");
         assertMissing(paths, API + "/projects/contractor/{userId}", "get");
@@ -247,6 +248,11 @@ class ApiIntegrationTests {
                         .content(materialJson(projectId, "Offline cement", "10", "2026-10-02")))
                 .andExpect(status().isCreated()).andReturn();
         long materialId = body(materialCreated).get("id").asLong();
+
+        mvc.perform(get(API + "/materials/offline-sync-capabilities")
+                        .header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.idempotentOfflineMovements").value(true));
 
         String payload = """
                 {"clientRequestId":"device01-draft0001","type":"USAGE","quantity":2,

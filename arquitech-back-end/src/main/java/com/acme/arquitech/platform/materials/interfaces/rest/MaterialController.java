@@ -50,6 +50,12 @@ public class MaterialController {
     public ResponseEntity<MaterialMovementResource> use(@PathVariable Long id, @Valid @RequestBody MaterialUsageResource r) {
         return ResponseEntity.status(201).body(MaterialMovementResource.from(commandService.use(id, r.toCommand())));
     }
+    @GetMapping("/offline-sync-capabilities")
+    @Operation(summary = "Report support for idempotent offline movements")
+    public java.util.Map<String, Boolean> offlineSyncCapabilities() {
+        return java.util.Map.of("idempotentOfflineMovements", true);
+    }
+
     @PostMapping("/{id}/offline-movements")
     @Operation(summary = "Apply a material draft once; safely replay the same client request id")
     public ResponseEntity<MaterialMovementResource> applyOffline(

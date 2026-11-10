@@ -8,7 +8,10 @@ import java.time.OffsetDateTime;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "material_movements")
+@Table(name = "material_movements", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_material_movements_client_request",
+                      columnNames = {"material_id", "client_request_id"})
+})
 @Getter
 @NoArgsConstructor
 public class MaterialMovement {
@@ -29,6 +32,8 @@ public class MaterialMovement {
     private OffsetDateTime occurredAt;
     @Column(length = 2000)
     private String note;
+    @Column(name = "client_request_id", length = 128)
+    private String clientRequestId;
 
     public MaterialMovement(Material material, MovementType type, BigDecimal quantity, String supplier,
                             User registeredBy, OffsetDateTime occurredAt, String note) {
@@ -39,5 +44,11 @@ public class MaterialMovement {
         this.registeredBy = registeredBy;
         this.occurredAt = occurredAt;
         this.note = note;
+    }
+
+    public MaterialMovement(Material material, MovementType type, BigDecimal quantity, String supplier,
+                            User registeredBy, OffsetDateTime occurredAt, String note, String clientRequestId) {
+        this(material, type, quantity, supplier, registeredBy, occurredAt, note);
+        this.clientRequestId = clientRequestId;
     }
 }

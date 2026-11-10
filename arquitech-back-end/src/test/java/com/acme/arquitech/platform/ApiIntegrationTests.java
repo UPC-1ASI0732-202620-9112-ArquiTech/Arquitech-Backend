@@ -140,6 +140,8 @@ class ApiIntegrationTests {
                 "DELETE " + API + "/materials/{id}",
                 "POST " + API + "/materials/{id}/entry",
                 "POST " + API + "/materials/{id}/use",
+                "POST " + API + "/materials/{id}/offline-movements",
+                "GET " + API + "/materials/offline-sync-capabilities",
                 "GET " + API + "/materials/project/{projectId}/history",
                 "GET " + API + "/machinery",
                 "GET " + API + "/machinery/{id}",
@@ -160,7 +162,7 @@ class ApiIntegrationTests {
                 "PUT " + API + "/incidents/{id}",
                 "DELETE " + API + "/incidents/{id}"
         ));
-        assertThat(actualOperations).hasSize(37);
+        assertThat(actualOperations).hasSize(39);
 
         assertMissing(paths, API + "/projects/{id}", "get");
         assertMissing(paths, API + "/projects/contractor/{userId}", "get");
@@ -232,6 +234,92 @@ class ApiIntegrationTests {
                         .content(projectJson(supervisor.id(), 999999L, "Invalid contractor")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_CONTRACTOR"));
+    }
+
+    @Test
+    void offlineMaterialMovementsAreIdempotentAndRequireSupervisorAccess() throws Exception {
+        Account supervisor = account("offline-supervisor", "SUPERVISOR");
+        Account contractor = account("offline-contractor", "CONTRACTOR");
+        long projectId = createProject(supervisor, contractor.id(), "Offline project");
+
+        MvcResult materialCreated = mvc.perform(post(API + "/materials")
+                        .header("Authorization", bearer(supervisor))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(materialJson(projectId, "Offline cement", "10", "2026-10-02")))
+                .andExpect(status().isCreated()).andReturn();
+        long materialId = body(materialCreated).get("id").asLong();
+
+        mvc.perform(get(API + "/materials/offline-sync-capabilities")
+                        .header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.idempotentOfflineMovements").value(true));
+
+        String payload = """
+                {"clientRequestId":"device01-draft0001","type":"USAGE","quantity":2,
+                 "occurredAt":"2026-10-02T18:00:00Z","note":"Offline material movement"}
+                """;
+        MvcResult first = mvc.perform(post(API + "/materials/{id}/offline-movements", materialId)
+                        .header("Authorization", bearer(supervisor))
+                        .contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.clientRequestId").value("device01-draft0001"))
+                .andExpect(jsonPath("$.quantity").value(2))
+                .andReturn();
+        long movementId = body(first).get("id").asLong();
+
+        // The response may be lost on the device. Replaying is safe even if
+        // available stock has changed since the first request.
+        mvc.perform(post(API + "/materials/{id}/offline-movements", materialId)
+                        .header("Authorization", bearer(supervisor))
+                        .contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(movementId));
+
+        mvc.perform(get(API + "/materials/project/{id}", projectId)
+                        .header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].stock").value(8));
+        mvc.perform(get(API + "/materials/project/{id}/history", projectId)
+                        .header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+
+        mvc.perform(post(API + "/materials/{id}/offline-movements", materialId)
+                        .header("Authorization", bearer(supervisor))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload.replace("\"quantity\":2", "\"quantity\":3")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("OFFLINE_REQUEST_CONFLICT"));
+
+        mvc.perform(post(API + "/materials/{id}/offline-movements", materialId)
+                        .header("Authorization", bearer(contractor))
+                        .contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andExpect(status().isForbidden());
+
+        // A separate request id can record a stock entry exactly once.
+        String entry = """
+                {"clientRequestId":"device01-draft0002","type":"ENTRY","quantity":3,
+                 "supplier":"Supplier","occurredAt":"2026-10-02T19:00:00Z",
+                 "note":"Offline entry"}
+                """;
+        mvc.perform(post(API + "/materials/{id}/offline-movements", materialId)
+                        .header("Authorization", bearer(supervisor))
+                        .contentType(MediaType.APPLICATION_JSON).content(entry))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.type").value("ENTRY"));
+        mvc.perform(post(API + "/materials/{id}/offline-movements", materialId)
+                        .header("Authorization", bearer(supervisor))
+                        .contentType(MediaType.APPLICATION_JSON).content(entry))
+                .andExpect(status().isOk());
+
+        mvc.perform(get(API + "/materials/project/{id}", projectId)
+                        .header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].stock").value(11));
+        mvc.perform(get(API + "/materials/project/{id}/history", projectId)
+                        .header("Authorization", bearer(supervisor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3));
     }
 
     @Test

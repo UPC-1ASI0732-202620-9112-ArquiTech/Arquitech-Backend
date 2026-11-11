@@ -6,6 +6,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import java.time.LocalDate;
+import java.util.Objects;
 
 @Entity
 @Table(name = "machineries", uniqueConstraints = @UniqueConstraint(
@@ -32,8 +33,19 @@ public class Machinery extends AuditableAbstractAggregateRoot<Machinery> {
         update(name, serialNumber, registeredAt, status, description);
     }
     public void update(String name, String serialNumber, LocalDate registeredAt, MachineryStatus status, String description) {
-        if (status != status.canonical()) throw ApiException.invalid("VALIDATION_ERROR", "Use a current machinery status");
-        this.name = name;
+        if (projectId == null || projectId <= 0)
+            throw ApiException.invalid("VALIDATION_ERROR", "projectId must be positive");
+        if (name == null || name.isBlank())
+            throw ApiException.invalid("VALIDATION_ERROR", "name is required");
+        if (serialNumber == null || serialNumber.isBlank())
+            throw ApiException.invalid("VALIDATION_ERROR", "serialNumber is required");
+        if (registeredAt == null || registeredAt.isAfter(LocalDate.now()))
+            throw ApiException.invalid("VALIDATION_ERROR", "registeredAt cannot be in the future");
+        if (status == null)
+            throw ApiException.invalid("VALIDATION_ERROR", "status is required");
+        if (!Objects.equals(status, status.canonical()))
+            throw ApiException.invalid("VALIDATION_ERROR", "Use a current machinery status");
+        this.name = name.trim();
         this.serialNumber = serialNumber.trim();
         this.registeredAt = registeredAt;
         this.status = status;

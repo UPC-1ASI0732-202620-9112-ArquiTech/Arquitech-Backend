@@ -450,6 +450,41 @@ class ApiIntegrationTests {
     }
 
     @Test
+    void machineryEnforcesReadScopeAndInputValidation() throws Exception {
+        Account supervisor = account("machinery-validation-supervisor", "SUPERVISOR");
+        Account contractor = account("machinery-validation-contractor", "CONTRACTOR");
+        Account outsider = account("machinery-validation-outsider", "CONTRACTOR");
+        long projectId = createProject(supervisor, contractor.id(), "Machinery validation project");
+        long foreignProjectId = createProject(supervisor, outsider.id(), "Machinery foreign project");
+
+        mvc.perform(post(API + "/machinery").header("Authorization", bearer(supervisor))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(machineryJson(projectId, "VALID-001", "Valid machine")))
+                .andExpect(status().isCreated());
+
+        mvc.perform(get(API + "/machinery").param("projectId", String.valueOf(projectId))
+                        .header("Authorization", bearer(contractor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+        mvc.perform(get(API + "/machinery").param("projectId", String.valueOf(foreignProjectId))
+                        .header("Authorization", bearer(contractor)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mvc.perform(get(API + "/machinery").param("projectId", "0")
+                        .header("Authorization", bearer(contractor)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        mvc.perform(post(API + "/machinery").header("Authorization", bearer(supervisor))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"projectId":%d,"name":" ","serialNumber":"INVALID-001",
+                                 "registeredAt":"2026-10-03","status":"OPERATIONAL"}
+                                """.formatted(projectId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void workforceTasksAndIncidentsEnforceDomainRules() throws Exception {
         Account supervisor = account("work-supervisor", "SUPERVISOR");
         Account contractor = account("work-contractor", "CONTRACTOR");

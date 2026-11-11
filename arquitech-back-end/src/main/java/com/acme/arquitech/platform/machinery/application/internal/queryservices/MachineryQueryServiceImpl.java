@@ -3,6 +3,7 @@ import com.acme.arquitech.platform.machinery.domain.model.aggregates.Machinery;
 import com.acme.arquitech.platform.machinery.domain.exception.MachineryNotFoundException;
 import com.acme.arquitech.platform.machinery.infrastructure.persistence.jpa.repositories.MachineryRepository;
 import com.acme.arquitech.platform.projects.application.authorization.ProjectAccessService;
+import com.acme.arquitech.platform.shared.domain.exceptions.ApiException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +21,8 @@ public class MachineryQueryServiceImpl {
         return entity;
     }
     public List<Machinery> findAll(Long projectId) {
+        if (projectId != null && projectId <= 0)
+            throw ApiException.invalid("VALIDATION_ERROR", "projectId must be positive");
         var scope = access.scope(projectId);
         return scope.isEmpty() ? List.of() : repository.findByProjectIdIn(scope);
     }

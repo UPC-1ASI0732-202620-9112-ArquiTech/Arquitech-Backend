@@ -20,6 +20,7 @@ public class MachineryCommandServiceImpl implements MachineryService {
     private final MachineryRepository repository;
     private final ProjectAccessService access;
     public Machinery create(CreateMachineryCommand r) {
+        validateProjectId(r.projectId());
         access.requireWrite(r.projectId());
         if (repository.existsByProjectIdAndSerialNumber(r.projectId(), r.serialNumber().trim())) throw duplicate();
         return save(new Machinery(r.projectId(), r.name(), r.serialNumber(), r.registeredAt(), r.status(), r.description()));
@@ -49,5 +50,10 @@ public class MachineryCommandServiceImpl implements MachineryService {
     private ApiException duplicate() {
         return ApiException.conflict("DUPLICATED_SERIAL_NUMBER",
                 "A machinery with this serial number already exists in the project");
+    }
+
+    private void validateProjectId(Long projectId) {
+        if (projectId == null || projectId <= 0)
+            throw ApiException.invalid("VALIDATION_ERROR", "projectId must be positive");
     }
 }

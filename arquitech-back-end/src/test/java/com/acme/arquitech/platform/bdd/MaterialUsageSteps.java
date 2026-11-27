@@ -26,6 +26,7 @@ public class MaterialUsageSteps {
     private long projectId;
     private long materialId;
     private ResultActions lastResponse;
+    private final java.util.List<Long> workerIds = new java.util.ArrayList<>();
 
     @Given("a supervisor has a project with a material that has a stock of {int}")
     public void aSupervisorHasAProjectWithAMaterial(int stock) throws Exception {
@@ -65,6 +66,88 @@ public class MaterialUsageSteps {
                         .header("Authorization", "Bearer " + supervisorToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].stock").value((double) expectedStock));
+    }
+
+    @When("the supervisor registers an entry of {int} units without supplier")
+    public void theSupervisorRegistersAnEntryWithoutSupplier(int quantity) throws Exception {
+        lastResponse = mockMvc.perform(post("/api/v1/materials/{id}/entry", materialId)
+                .header("Authorization", "Bearer " + supervisorToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"quantity": %d, "occurredAt": "2026-10-07T10:00:00Z"}
+                        """.formatted(quantity)));
+    }
+
+    @When("the supervisor syncs the offline usage {string} of {int} units")
+    public void theSupervisorSyncsTheOfflineUsage(String clientRequestId, int quantity) throws Exception {
+        lastResponse = mockMvc.perform(post("/api/v1/materials/{id}/offline-movements", materialId)
+                .header("Authorization", "Bearer " + supervisorToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"clientRequestId": "%s", "type": "USAGE", "quantity": %d,
+                         "occurredAt": "2026-10-07T10:00:00Z", "note": "Offline draft"}
+                        """.formatted(clientRequestId, quantity)));
+    }
+
+    @Then("the project history has {int} usage movements")
+    public void theProjectHistoryHasUsageMovements(int expected) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/materials/project/{projectId}/history", projectId)
+                        .header("Authorization", "Bearer " + supervisorToken))
+                .andExpect(status().isOk())
+                .andReturn();
+        long usages = 0;
+        for (var movement : objectMapper.readTree(result.getResponse().getContentAsString())) {
+            if ("USAGE".equals(movement.get("type").asText())) usages++;
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(expected, usages);
+    }
+
+    @Given("the project has {int} active workers")
+    public void theProjectHasActiveWorkers(int count) throws Exception {
+        workerIds.clear();
+        for (int index = 1; index <= count; index++) {
+            MvcResult result = mockMvc.perform(post("/api/v1/workers")
+                            .header("Authorization", "Bearer " + supervisorToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"projectId": %d, "fullName": "Trabajador %d", "role": "Operario",
+                                     "hireDate": "2026-01-15", "status": "ACTIVE"}
+                                    """.formatted(projectId, index)))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            workerIds.add(readId(result));
+        }
+    }
+
+    @When("the supervisor records every worker as {string} on {string}")
+    public void theSupervisorRecordsEveryWorker(String attendanceStatus, String date) throws Exception {
+        for (Long workerId : workerIds) {
+            recordAttendance(workerId, attendanceStatus, date).andExpect(status().isCreated());
+        }
+    }
+
+    @When("the supervisor records the first worker as {string} on {string}")
+    public void theSupervisorRecordsTheFirstWorker(String attendanceStatus, String date) throws Exception {
+        lastResponse = recordAttendance(workerIds.get(0), attendanceStatus, date);
+    }
+
+    @Then("{int} attendance records exist for {string}")
+    public void attendanceRecordsExist(int expected, String date) throws Exception {
+        mockMvc.perform(get("/api/v1/attendance")
+                        .param("projectId", String.valueOf(projectId))
+                        .param("date", date)
+                        .header("Authorization", "Bearer " + supervisorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(expected));
+    }
+
+    private ResultActions recordAttendance(long workerId, String attendanceStatus, String date) throws Exception {
+        return mockMvc.perform(post("/api/v1/attendance")
+                .header("Authorization", "Bearer " + supervisorToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"projectId": %d, "workerId": %d, "attendanceDate": "%s", "status": "%s"}
+                        """.formatted(projectId, workerId, date, attendanceStatus)));
     }
 
     private long signUp(String email, String role) throws Exception {

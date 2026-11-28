@@ -1,0 +1,58 @@
+name: Code quality and security
+on:
+  push:
+    branches:
+      - main
+      - feature/tb2-code-quality-security
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  duplication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Measure source duplication
+        run: npx --yes jscpd@4.0.5 --min-lines 5 --min-tokens 50 --format java --reporters console,json --output quality-report arquitech-back-end/src/main/java
+      - name: Preserve duplication report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-duplication
+          path: quality-report
+          if-no-files-found: error
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Scan dependency manifest with OSV
+        uses: google/osv-scanner-action/osv-scanner-action@0e457b42d0120153c352875e9b758b1e5c58c7e5
+        with:
+          scan-args: |
+            --lockfile=arquitech-back-end/pom.xml
+            --format=json
+            --output=osv-results.json
+      - name: Show scan report
+        if: always()
+        run: |
+          test -s osv-results.json
+          cat osv-results.json
+      - name: Preserve scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osv-dependency-audit
+          path: osv-results.json
+          if-no-files-found: error

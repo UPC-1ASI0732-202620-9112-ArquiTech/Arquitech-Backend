@@ -56,3 +56,38 @@ jobs:
           name: osv-dependency-audit
           path: osv-results.json
           if-no-files-found: error
+  mvc-exposure-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect SSE and XSLT feature usage
+        shell: bash
+        run: |
+          set -eu
+          root=arquitech-back-end/src/main
+          {
+            echo 'Scope: application source and configuration'
+            echo 'Advisories: GHSA-j9f9-w8pj-32f8 and GHSA-pc63-qcmh-9cmg'
+            echo 'SSE, fragment rendering, XSLT and MVC view configuration references:'
+            if grep -RInE 'SseEmitter|ServerSentEvent|TEXT_EVENT_STREAM|text/event-stream|FragmentsRendering|ModelAndView|XsltView|XsltViewResolver|ViewResolver|configureViewResolvers|@Controller([[:space:](]|$)' "$root"; then
+              echo 'Review matched references before determining applicability.'
+            else
+              code=$?
+              test "$code" -eq 1
+              echo 'No matching references found.'
+            fi
+            echo 'XSLT templates:'
+            find "$root" -type f \( -iname '*.xsl' -o -iname '*.xslt' \) -print
+            echo 'REST controllers:'
+            grep -Rl '@RestController' "$root/java" | sort
+            echo 'Dependency findings remain visible in OSV; absence of matching references is not proof of absence of risk.'
+          } | tee mvc-exposure-review.txt
+      - name: Preserve source review
+        uses: actions/upload-artifact@v4
+        with:
+          name: mvc-exposure-review
+          path: mvc-exposure-review.txt
+          if-no-files-found: error

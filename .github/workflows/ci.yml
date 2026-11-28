@@ -36,5 +36,8 @@ jobs:
       - name: Make Maven Wrapper executable
         run: chmod +x ./mvnw
 
+      - name: Check Java conventions
+        run: ./mvnw -B org.apache.maven.plugins:maven-checkstyle-plugin:3.6.0:check -Dcheckstyle.config.location=checkstyle.xml
+
       - name: Verify
         run: ./mvnw clean verify

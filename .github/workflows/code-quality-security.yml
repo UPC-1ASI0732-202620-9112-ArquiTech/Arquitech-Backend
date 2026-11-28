@@ -1,0 +1,93 @@
+name: Code quality and security
+on:
+  push:
+    branches:
+      - main
+      - feature/tb2-code-quality-security
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  duplication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Measure source duplication
+        run: npx --yes jscpd@4.0.5 --min-lines 5 --min-tokens 50 --format java --reporters console,json --output quality-report arquitech-back-end/src/main/java
+      - name: Preserve duplication report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-duplication
+          path: quality-report
+          if-no-files-found: error
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Scan dependency manifest with OSV
+        uses: google/osv-scanner-action/osv-scanner-action@0e457b42d0120153c352875e9b758b1e5c58c7e5
+        with:
+          scan-args: |
+            --lockfile=arquitech-back-end/pom.xml
+            --format=json
+            --output=osv-results.json
+      - name: Show scan report
+        if: always()
+        run: |
+          test -s osv-results.json
+          cat osv-results.json
+      - name: Preserve scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osv-dependency-audit
+          path: osv-results.json
+          if-no-files-found: error
+  mvc-exposure-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect SSE and XSLT feature usage
+        shell: bash
+        run: |
+          set -eu
+          root=arquitech-back-end/src/main
+          {
+            echo 'Scope: application source and configuration'
+            echo 'Advisories: GHSA-j9f9-w8pj-32f8 and GHSA-pc63-qcmh-9cmg'
+            echo 'SSE, fragment rendering, XSLT and MVC view configuration references:'
+            if grep -RInE 'SseEmitter|ServerSentEvent|TEXT_EVENT_STREAM|text/event-stream|FragmentsRendering|ModelAndView|XsltView|XsltViewResolver|ViewResolver|configureViewResolvers|@Controller([[:space:](]|$)' "$root"; then
+              echo 'Review matched references before determining applicability.'
+            else
+              code=$?
+              test "$code" -eq 1
+              echo 'No matching references found.'
+            fi
+            echo 'XSLT templates:'
+            find "$root" -type f \( -iname '*.xsl' -o -iname '*.xslt' \) -print
+            echo 'REST controllers:'
+            grep -Rl '@RestController' "$root/java" | sort
+            echo 'Dependency findings remain visible in OSV; absence of matching references is not proof of absence of risk.'
+          } | tee mvc-exposure-review.txt
+      - name: Preserve source review
+        uses: actions/upload-artifact@v4
+        with:
+          name: mvc-exposure-review
+          path: mvc-exposure-review.txt
+          if-no-files-found: error

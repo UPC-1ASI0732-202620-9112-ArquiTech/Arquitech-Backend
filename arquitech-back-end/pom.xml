@@ -28,6 +28,10 @@
     </scm>
     <properties>
         <java.version>17</java.version>
+        <jackson-bom.version>2.21.7</jackson-bom.version>
+        <commons-lang3.version>3.18.0</commons-lang3.version>
+        <log4j2.version>2.25.5</log4j2.version>
+        <tomcat.version>10.1.59</tomcat.version>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
     </properties>

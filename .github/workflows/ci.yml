@@ -41,3 +41,11 @@ jobs:
 
       - name: Verify
         run: ./mvnw clean verify
+
+      - name: Preserve validated build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar-${{ github.sha }}
+          path: arquitech-back-end/target/arquitech-back-end-0.0.1-SNAPSHOT.jar
+          if-no-files-found: error
+          retention-days: 14
